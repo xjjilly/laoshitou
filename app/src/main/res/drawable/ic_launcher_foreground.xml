@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Three rounded level bars: a minimal equalizer mark. -->
+    <path
+        android:fillColor="#E6B450"
+        android:pathData="M33,58 h6 a4,4 0 0 1 4,4 v16 a4,4 0 0 1 -4,4 h-6 a4,4 0 0 1 -4,-4 v-16 a4,4 0 0 1 4,-4 z" />
+    <path
+        android:fillColor="#63D2C1"
+        android:pathData="M51,38 h6 a4,4 0 0 1 4,4 v36 a4,4 0 0 1 -4,4 h-6 a4,4 0 0 1 -4,-4 v-36 a4,4 0 0 1 4,-4 z" />
+    <path
+        android:fillColor="#E6B450"
+        android:pathData="M69,48 h6 a4,4 0 0 1 4,4 v26 a4,4 0 0 1 -4,4 h-6 a4,4 0 0 1 -4,-4 v-26 a4,4 0 0 1 4,-4 z" />
+</vector>

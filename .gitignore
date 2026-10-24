@@ -1,0 +1,40 @@
+# Local toolchain and FFmpeg build tree
+.tools/
+.ffmpeg-build/
+
+# Build output
+build/
+build-host/
+build-cmake/
+out/
+.cxx/
+
+# Gradle / Android
+.gradle/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Native artifacts
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Release signing (never commit)
+keystore.properties
+*.jks
+*.keystore
+
+# Release binaries, checksums and generated test audio
+artifacts/
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db

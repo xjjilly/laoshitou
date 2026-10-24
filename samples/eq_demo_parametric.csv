@@ -1,0 +1,4 @@
+Type,Frequency,Gain,Q,Enabled
+LSC,100.0,5.5,0.70,true
+PK,3000.0,-4.5,1.20,true
+HSC,9000.0,-2.5,0.70,true
