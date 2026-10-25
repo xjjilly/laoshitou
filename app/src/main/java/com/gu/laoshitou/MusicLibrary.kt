@@ -5,7 +5,7 @@ package com.gu.laoshitou
 
 import java.io.File
 
-private val AUDIO_EXTENSIONS = setOf(
+internal val AUDIO_EXTENSIONS = setOf(
     "flac",
     "wav",
     "w64",

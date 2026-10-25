@@ -22,8 +22,8 @@ android {
         applicationId = "com.gu.laoshitou"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "1.1"
 
         ndk {
             // FFmpeg is currently built for arm64-v8a. Add x86_64 here after
@@ -97,7 +97,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("com.google.oboe:oboe:1.11.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

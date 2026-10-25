@@ -165,6 +165,13 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                     ) {
                         Text("选择音频")
                     }
+                    OutlinedButton(
+                        onClick = actions.pickAudioFolder,
+                        enabled = !state.playing,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("选择文件夹")
+                    }
                     Button(
                         onClick = actions.togglePause,
                         enabled = state.playing,

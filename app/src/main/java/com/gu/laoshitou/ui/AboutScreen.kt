@@ -138,7 +138,8 @@ fun AboutScreen(
                     Text(
                         "本应用未申请 INTERNET 权限，无广告、无在线曲库、无遥测；" +
                             "音频与配置均在本机处理，不上传文件，且已关闭系统云备份。" +
-                            "文件访问通过系统选择器或应用私有目录。" +
+                            "音乐库读取手机根目录的 laoshitou/ 文件夹，需「所有文件访问」权限；" +
+                            "其余文件访问通过系统选择器。" +
                             "请使用适度音量，长时间高音量可能损伤听力。",
                         style = MaterialTheme.typography.bodySmall,
                         color = HifiMuted,

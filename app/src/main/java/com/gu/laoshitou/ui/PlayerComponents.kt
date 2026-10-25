@@ -26,7 +26,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -104,7 +108,7 @@ fun MusicLibrary(
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = actions.refreshLibrary) {
-                    Text("刷新")
+                    Text("扫描")
                 }
             }
             PlayModeSelector(state, actions)
@@ -112,14 +116,37 @@ fun MusicLibrary(
 
             if (state.albums.isEmpty()) {
                 Text(
-                    text = "音乐文件夹：${state.musicDir}",
+                    text = buildAnnotatedString {
+                        append("请将音乐复制到手机根目录的")
+                        withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
+                            append("laoshitou/")
+                        }
+                        append(" 目录下。")
+                    },
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "每个子文件夹是一张专辑；放入音频后点“刷新”。",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                if (state.musicDirAccess) {
+                    Text(
+                        text = "放入音频后点“扫描”。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(
+                        text = "未授予存储权限，无法扫描。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = actions.requestStorageAccess) {
+                        Text("授权访问")
+                    }
+                }
+                if (state.hasLegacyMusic) {
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = actions.migrateLegacyMusic) {
+                        Text("迁移旧目录音乐")
+                    }
+                }
             } else {
                 state.albums.forEach { item ->
                     Row(
@@ -179,7 +206,7 @@ fun MusicLibrary(
                     )
                 }
                 TextButton(onClick = actions.refreshLibrary) {
-                    Text("刷新")
+                    Text("扫描")
                 }
             }
             PlayModeSelector(state, actions)

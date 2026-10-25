@@ -1,6 +1,6 @@
 # 老石头 · LaoShiTou
 
-本地优先、音质优先的 Android 播放器。**无广告、无在线曲库、无账号、无遥测，未申请 `INTERNET` 权限**；解码、DSP、文件访问全部在本机完成，系统云备份也已关闭。
+本地优先、音质优先的 Android 播放器。**无广告、无在线曲库、无账号、无遥测，未申请 `INTERNET` 权限**；解码、DSP、文件访问全部在本机完成，系统云备份也已关闭。音乐库读取手机根目录的 `laoshitou/` 文件夹，为此申请「所有文件访问」权限。
 
 **作者：[xjjilly](https://github.com/xjjilly)** · **License: [GNU GPLv3](LICENSE)** · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
@@ -19,8 +19,8 @@
 - **声场控制**：libbs2b Crossfeed 强度、M/S 声场拓宽（0-150%）、响度补偿与限幅保护。
 - **设备切换自动恢复**：蓝牙/有线/USB 路由变化导致 Oboe 断流时自动重开；同采样率保留环形缓冲与 DSP 状态，采样率变化则重建重采样与 DSP 链。
 - **三种界面**：极简 / 沉浸 / 高保真，共享同一播放与曲库状态。
-- **纯本地曲库**：专辑按文件夹组织，顺序/循环/随机，支持媒体按键、前台服务与音频焦点。
-- **隐私优先**：无 `INTERNET` 权限、无广告 SDK、无在线曲库、无遥测；`android:allowBackup="false"`，不向云端备份数据。
+- **纯本地曲库**：扫描手机根目录 `laoshitou/` 文件夹，专辑按子文件夹组织，顺序/循环/随机，支持媒体按键、前台服务与音频焦点。
+- **隐私优先**：无 `INTERNET` 权限、无广告 SDK、无在线曲库、无遥测；仅申请「所有文件访问」（读取 `laoshitou/` 音乐目录所需，DSD 等非标准媒体扩展名无法用常规媒体权限读取）；`android:allowBackup="false"`，不向云端备份数据。
 - **GPLv3**：完整源代码随发布提供，第三方组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## Architecture (Route B)
@@ -120,6 +120,10 @@ Two playback modes:
 - [x] Release compliance: no `libfdk_aac`, `--enable-gpl`, `--enable-nonfree`
       or `--enable-version3` in FFmpeg; native AAC decoder only; libsamplerate
       is BSD-2-Clause; no test music in the APK or source tree.
+- [x] Music library: scans `/sdcard/laoshitou/` at startup and on return to
+      foreground, with scan status feedback and an empty-library hint showing
+      where to copy music; one-tap migration from the old app-private folder;
+      All Files Access permission flow (API 30+)
 - [ ] Seek/position/duration
 - [ ] Device verification of Exclusive mode and long-run stability
 
@@ -157,7 +161,7 @@ AudioEngine: output reopened: requested=48000 actual=48000 (ring preserved)
 - Signed release APK: `artifacts/app-release-signed.apk`
 - Debug build: `app/build/outputs/apk/debug/app-debug.apk`
 - Checksums: `artifacts/SHA256SUMS`
-- Release notes: `RELEASE_NOTES_v0.1.0-alpha.md`
+- Release notes: `RELEASE_NOTES_v1.1.md`
 
 ```sh
 adb install -r artifacts/app-release-signed.apk
@@ -186,7 +190,7 @@ To build it yourself:
    ```
 
 The GPLv3 corresponding source bundle is
-`artifacts/laoshitou-0.1.0-source.tar.gz`; it includes the app source,
+`artifacts/laoshitou-1.1-source.tar.gz`; it includes the app source,
 third-party sources, license texts and the exact FFmpeg 7.1 tarball. Publish
 it together with any binary release.
 
@@ -194,17 +198,25 @@ On the phone, open **老石头**:
 
 1. Tap **测试音** to validate the Oboe path. The UI reports the actual
    output rate and whether Oboe granted Exclusive mode.
-2. The **音乐专辑** card scans the app's Music folder at startup and after
-   **刷新**. Each subfolder is one album, named after the folder. Tap an album,
-   then a track; the playing track is highlighted and all three UI versions
-   share the same album/queue state. Copy albums with:
+2. The **音乐专辑** card scans `/sdcard/laoshitou/` at startup and after
+   **扫描**, and rescans automatically whenever the app returns to the
+   foreground. Each subfolder is one album, named after the folder. Tap an
+   album, then a track; the playing track is highlighted and all three UI
+   versions share the same album/queue state. On first run, grant **所有文件
+   访问** when prompted (tap **授权访问** in the library card); music from the
+   old app-private folder can be moved over with **迁移旧目录音乐**. When the
+   library is empty, the three UIs show a hint to copy music into the
+   `laoshitou/` folder on the phone root. Copy albums with:
 
 ```sh
-adb push "D:/music/MyAlbum" /sdcard/Android/data/com.gu.laoshitou/files/Music/MyAlbum/
+adb push "D:/music/MyAlbum" /sdcard/laoshitou/MyAlbum/
 ```
 
 3. Tap **选择音频文件** and pick an audio file from the system file picker, or
-   push an audio file to the manual path and tap **按路径播放**:
+   tap **选择音频文件夹** to import a whole folder: its audio files are copied
+   into `laoshitou/<folder>/` (subfolder structure kept, unique names on
+   collision) and it appears as an album after the import. Or push an audio
+   file to the manual path and tap **按路径播放**:
 
 ```sh
 adb push test.wav /sdcard/Android/data/com.gu.laoshitou/files/test.wav
@@ -319,17 +331,23 @@ override is session-only; 192k files play bit-for-bit at 192k when selected.
 
 ## Music library
 
-- The library scans `<external files dir>/Music` recursively (up to 8 levels)
-  for the supported containers, ordered naturally by relative path
-  (01, 02, ..., 10, ...). The folder is created on first launch.
+- The library scans `/sdcard/laoshitou/` (the `laoshitou/` folder on the phone
+  root) recursively (up to 8 levels) for the supported containers, ordered
+  naturally by relative path (01, 02, ..., 10, ...). Reading it requires the
+  **All Files Access** permission (API 30+; `READ_EXTERNAL_STORAGE` on API
+  26-29) because DSD/APE extensions are not covered by the regular media
+  permissions. The folder is created on first scan once access is granted.
 - Each folder that directly contains audio files is one album, named after
-  the folder ("未分类" for files in the Music root). Tracks inside an album
+  the folder ("未分类" for files in the scan root). Tracks inside an album
   are sorted naturally; albums are ordered by relative path.
+- Music from the old app-private location
+  (`Android/data/com.gu.laoshitou/files/Music/`) is offered a one-tap
+  migration (**迁移旧目录音乐**) when the new folder is empty.
 - Test albums on the device:
   - `D:\BaiduNetdiskDownload\beyond\BEYOND` →
-    `Music/BEYOND/`: 16 DSD64 `.dff` tracks, played directly.
+    `laoshitou/BEYOND/`: 16 DSD64 `.dff` tracks, played directly.
   - `D:\BaiduNetdiskDownload\绝对发烧1    SACD` →
-    `Music/绝对发烧1    SACD/`: 12 WAV tracks, 24-bit/192 kHz stereo.
+    `laoshitou/绝对发烧1    SACD/`: 12 WAV tracks, 24-bit/192 kHz stereo.
   The previous FLAC album was removed from the device.
 - The list and the current-track highlight are shared state, so switching
   UI versions does not interrupt playback or lose the selection.
@@ -340,7 +358,9 @@ override is session-only; 192k files play bit-for-bit at 192k when selected.
   - **随机**: pick a random next track, never repeating the current one.
   Auto-advance starts only after the ring has drained, so track tails are
   not cut off.
-- **刷新** rescans the folder; files added over adb show up without a restart.
+- **扫描** rescans the folder; files added over adb show up without a
+  restart. The library also rescans automatically when the app returns to
+  the foreground, and the status line reports the scan result.
 
 ## Offline DSP verification
 

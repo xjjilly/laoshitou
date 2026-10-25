@@ -59,6 +59,8 @@ class PlayerState(
     var albums by mutableStateOf<List<AlbumItem>>(emptyList())
     var selectedAlbumPath by mutableStateOf<String?>(null)
     var tracks by mutableStateOf<List<TrackItem>>(emptyList())
+    var musicDirAccess by mutableStateOf(true)
+    var hasLegacyMusic by mutableStateOf(false)
     var currentTrackIndex by mutableStateOf(-1)
     var playMode by mutableStateOf(PlayMode.Sequential)
 
@@ -110,12 +112,15 @@ class PlayerState(
 
 data class PlayerActions(
     val pickAudio: () -> Unit,
+    val pickAudioFolder: () -> Unit,
     val pickEq: () -> Unit,
     val startPath: () -> Unit,
     val startTestTone: () -> Unit,
     val stop: () -> Unit,
     val togglePause: () -> Unit,
     val refreshLibrary: () -> Unit,
+    val requestStorageAccess: () -> Unit,
+    val migrateLegacyMusic: () -> Unit,
     val openAlbum: (String) -> Unit,
     val closeAlbum: () -> Unit,
     val playTrack: (Int) -> Unit,

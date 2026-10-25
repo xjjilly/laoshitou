@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -117,6 +118,18 @@ fun MinimalPlayerScreen(state: PlayerState, actions: PlayerActions) {
                             Icon(Icons.Rounded.LibraryMusic, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("选择音频文件")
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = actions.pickAudioFolder,
+                            enabled = !state.playing,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                        ) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("选择音频文件夹")
                         }
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

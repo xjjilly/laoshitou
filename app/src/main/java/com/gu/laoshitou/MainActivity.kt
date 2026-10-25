@@ -4,6 +4,7 @@
 package com.gu.laoshitou
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -11,18 +12,27 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
+import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gu.laoshitou.ui.HifiDashboardScreen
 import com.gu.laoshitou.ui.ImmersivePlayerScreen
 import com.gu.laoshitou.ui.MinimalPlayerScreen
@@ -44,6 +54,7 @@ import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +78,7 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val scanJob = remember { mutableStateOf<Job?>(null) }
 
     val defaultPath = remember {
         val directory = context.getExternalFilesDir(null)?.absolutePath
@@ -117,9 +129,9 @@ private fun AppRoot() {
     }
 
     val musicDir = remember {
-        val base = context.getExternalFilesDir(null)
-            ?: File("/sdcard/Android/data/com.gu.laoshitou/files")
-        File(base, "Music").apply { mkdirs() }.absolutePath
+        @Suppress("DEPRECATION") // 公共存储根目录无替代 API；仅用于定位 /sdcard/laoshitou
+        val root = Environment.getExternalStorageDirectory() ?: File("/sdcard")
+        File(root, "laoshitou").absolutePath
     }
 
     val settings = remember {
@@ -435,10 +447,31 @@ private fun AppRoot() {
         }
     }
 
+    fun hasMusicAccess(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    fun legacyMusicFolder(): File =
+        context.getExternalFilesDir(null)?.let { File(it, "Music") }
+            ?: File("/sdcard/Android/data/com.gu.laoshitou/files/Music")
+
     fun refreshLibrary() {
-        scope.launch {
+        scanJob.value?.cancel()
+        scanJob.value = scope.launch {
+            state.musicDirAccess = hasMusicAccess()
+            state.status = "正在扫描音乐…"
+            if (!state.musicDirAccess) {
+                state.albums = emptyList()
+                state.hasLegacyMusic = false
+                state.status = "未授予存储权限，无法扫描 ${state.musicDir}"
+                return@launch
+            }
             val folders = withContext(Dispatchers.IO) {
-                scanMusicLibrary(File(state.musicDir))
+                val directory = File(state.musicDir).apply { mkdirs() }
+                scanMusicLibrary(directory)
             }
             state.albums = folders.map { folder ->
                 AlbumItem(
@@ -466,6 +499,172 @@ private fun AppRoot() {
             } else {
                 "已扫描 ${state.albums.size} 张专辑，$trackCount 首音乐"
             }
+            // 旧目录仍有音乐且新目录为空 → 提供一键迁移
+            state.hasLegacyMusic = state.albums.isEmpty() &&
+                withContext(Dispatchers.IO) {
+                    scanMusicLibrary(legacyMusicFolder()).isNotEmpty()
+                }
+        }
+    }
+
+    fun migrateLegacyMusic() {
+        scope.launch {
+            val legacy = legacyMusicFolder()
+            val target = File(state.musicDir)
+            val files = withContext(Dispatchers.IO) {
+                target.mkdirs()
+                scanMusicLibrary(legacy).flatMap { it.files }
+            }
+            var done = 0
+            for (file in files) {
+                done++
+                state.status = "正在迁移旧目录音乐…（$done/${files.size}）"
+                withContext(Dispatchers.IO) {
+                    val destination = File(target, file.relativeTo(legacy).path)
+                    destination.parentFile?.mkdirs()
+                    file.copyTo(destination, overwrite = true)
+                    if (destination.length() == file.length()) {
+                        file.delete()
+                    }
+                }
+            }
+            refreshLibrary()
+        }
+    }
+
+    fun collectAudioFiles(
+        directory: DocumentFile,
+        depth: Int,
+        relative: String = "",
+    ): List<Pair<DocumentFile, String>> {
+        if (depth > 8) {
+            return emptyList()
+        }
+        val result = mutableListOf<Pair<DocumentFile, String>>()
+        for (child in directory.listFiles()) {
+            val name = child.name ?: continue
+            val childRelative = if (relative.isEmpty()) name else "$relative/$name"
+            when {
+                child.isDirectory -> result += collectAudioFiles(child, depth + 1, childRelative)
+                name.substringAfterLast('.', "").lowercase() in AUDIO_EXTENSIONS ->
+                    result += child to childRelative
+            }
+        }
+        return result
+    }
+
+    fun uniqueTargetDir(base: File, name: String): File {
+        var candidate = File(base, name)
+        var index = 2
+        while (candidate.exists()) {
+            candidate = File(base, "$name ($index)")
+            index++
+        }
+        return candidate.apply { mkdirs() }
+    }
+
+    fun pickedTreePath(uri: Uri): String? {
+        val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }
+            .getOrNull() ?: return null
+        if (!documentId.startsWith("primary:")) {
+            return null
+        }
+        return "/storage/emulated/0/" + documentId.removePrefix("primary:")
+    }
+
+    fun importAudioFolder(uri: Uri, folderName: String) {
+        scope.launch {
+            if (!state.musicDirAccess) {
+                state.status = "未授予存储权限，无法导入音频文件夹"
+                return@launch
+            }
+            // 防止把音乐目录自身或其子目录导入进来（会造成自我复制）
+            val musicPath = runCatching { File(state.musicDir).canonicalPath }
+                .getOrNull() ?: state.musicDir
+            val treePath = pickedTreePath(uri)
+            if (treePath == musicPath || treePath?.startsWith("$musicPath/") == true) {
+                state.status = "不能导入音乐目录自身或其子目录"
+                return@launch
+            }
+            state.status = "正在读取所选文件夹…"
+            val entries = withContext(Dispatchers.IO) {
+                runCatching {
+                    val tree = DocumentFile.fromTreeUri(context, uri)
+                        ?: return@runCatching emptyList()
+                    collectAudioFiles(tree, 0)
+                }.getOrElse { emptyList() }
+            }
+            if (entries.isEmpty()) {
+                state.status = "所选文件夹中没有支持的音频文件"
+                return@launch
+            }
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            val safeName = folderName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                .ifEmpty { "导入的音乐" }
+            val target = uniqueTargetDir(File(state.musicDir), safeName)
+            var done = 0
+            var failed = 0
+            for ((document, relativePath) in entries) {
+                done++
+                state.status = "正在导入音频文件夹…（$done/${entries.size}）"
+                val copied = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val destination = File(target, relativePath)
+                        destination.parentFile?.mkdirs()
+                        val input = context.contentResolver.openInputStream(document.uri)
+                            ?: return@runCatching false
+                        input.use { source ->
+                            destination.outputStream().use { source.copyTo(it) }
+                        }
+                        true
+                    }.getOrDefault(false)
+                }
+                if (!copied) {
+                    failed++
+                }
+            }
+            state.status = if (failed == 0) {
+                "已导入 ${entries.size} 首到 ${target.name}"
+            } else {
+                "已导入 ${entries.size - failed} 首，跳过 $failed 首（读取失败）"
+            }
+            refreshLibrary()
+        }
+    }
+
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val name = DocumentFile.fromTreeUri(context, uri)?.name ?: "导入的文件夹"
+            importAudioFolder(uri, name)
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { refreshLibrary() }
+
+    fun requestStorageAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:${context.packageName}"),
+            )
+            try {
+                context.startActivity(intent)
+            } catch (_: ActivityNotFoundException) {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
+                )
+            }
+        } else {
+            permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 
@@ -596,6 +795,7 @@ private fun AppRoot() {
 
     val actions = PlayerActions(
         pickAudio = { audioPicker.launch(arrayOf("audio/*")) },
+        pickAudioFolder = { folderPicker.launch(null) },
         pickEq = { eqPicker.launch(arrayOf("*/*")) },
         startPath = {
             val displayName = state.filePath.substringAfterLast('/').ifBlank {
@@ -779,10 +979,24 @@ private fun AppRoot() {
         setFilePath = { state.filePath = it },
         setEqPath = { state.eqPath = it },
         refreshLibrary = ::refreshLibrary,
+        requestStorageAccess = ::requestStorageAccess,
+        migrateLegacyMusic = ::migrateLegacyMusic,
         openAlbum = { relativePath -> state.selectedAlbumPath = relativePath },
         closeAlbum = { state.selectedAlbumPath = null },
         playTrack = ::playTrack,
     )
+
+    // 回到前台自动重扫；首次 ON_RESUME 即覆盖启动扫描
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshLibrary()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(Unit) {
         refreshIrFiles()
@@ -797,7 +1011,7 @@ private fun AppRoot() {
             state.eqPath = path
             state.eqName = "可视化 16 段"
         }
-        refreshLibrary()
+        // 启动扫描由上面的 ON_RESUME 生命周期触发，这里不重复调用
     }
 
     LaunchedEffect(state.playing) {

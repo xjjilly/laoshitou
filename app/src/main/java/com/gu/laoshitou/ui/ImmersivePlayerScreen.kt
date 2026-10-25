@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -175,6 +176,21 @@ fun ImmersivePlayerScreen(state: PlayerState, actions: PlayerActions) {
                     ) {
                         Icon(
                             Icons.Rounded.LibraryMusic,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(24.dp))
+                    OutlinedIconButton(
+                        onClick = actions.pickAudioFolder,
+                        enabled = !state.playing,
+                        modifier = Modifier.size(56.dp),
+                        colors = IconButtonDefaults.outlinedIconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onBackground,
+                        ),
+                    ) {
+                        Icon(
+                            Icons.Rounded.FolderOpen,
                             contentDescription = null,
                             modifier = Modifier.size(28.dp),
                         )
