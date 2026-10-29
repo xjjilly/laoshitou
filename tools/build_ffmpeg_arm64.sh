@@ -10,19 +10,23 @@ export TEMP="$TMPDIR"
 mkdir -p "$TMPDIR"
 
 SRC=$ROOT/ffmpeg-7.1
-SYSROOT_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/sysroot
-CC_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe
-CXX_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++.exe
-HOST_CC_WIN=E:/Tools/llvm-mingw-20261006-ucrt-x86_64/bin/gcc.exe
-AR_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe
-RANLIB_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ranlib.exe
-STRIP_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-strip.exe
-NM_WIN=E:/Tools/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-nm.exe
+# Windows build hosts only. Override the toolchain roots via the environment.
+NDK_ROOT="${ANDROID_NDK_HOME:-E:/Tools/android-sdk/ndk/28.2.13676358}"
+LLVM_MINGW="${LLVM_MINGW_ROOT:-E:/Tools/llvm-mingw-20261006-ucrt-x86_64}"
+TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/windows-x86_64"
+SYSROOT_WIN=$TOOLCHAIN/sysroot
+CC_WIN=$TOOLCHAIN/bin/clang.exe
+CXX_WIN=$TOOLCHAIN/bin/clang++.exe
+HOST_CC_WIN=$LLVM_MINGW/bin/gcc.exe
+AR_WIN=$TOOLCHAIN/bin/llvm-ar.exe
+RANLIB_WIN=$TOOLCHAIN/bin/llvm-ranlib.exe
+STRIP_WIN=$TOOLCHAIN/bin/llvm-strip.exe
+NM_WIN=$TOOLCHAIN/bin/llvm-nm.exe
 # Relative to $SRC after `cd "$SRC"`: <project>/third_party/ffmpeg/arm64-v8a
 PREFIX=../../third_party/ffmpeg/arm64-v8a
 TARGET=aarch64-linux-android26
-MAKE=/e/Tools/llvm-mingw-20261006-ucrt-x86_64/bin/mingw32-make.exe
-export PATH="/e/Tools/llvm-mingw-20261006-ucrt-x86_64/bin:$PATH"
+MAKE="$LLVM_MINGW/bin/mingw32-make.exe"
+export PATH="$LLVM_MINGW/bin:$PATH"
 
 rm -rf "$SRC"
 mkdir -p "$ROOT"

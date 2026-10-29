@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
@@ -386,26 +391,7 @@ fun QuickSettingsContent(
         )
 
         Spacer(Modifier.height(8.dp))
-        Text("设备预设", style = MaterialTheme.typography.bodyLarge)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SoundPreset.entries.forEach { preset ->
-                FilterChip(
-                    selected = false,
-                    onClick = { actions.applyPreset(preset) },
-                    label = { Text(preset.label) },
-                    enabled = !state.playing,
-                )
-            }
-        }
-        Text(
-            "预设会切换 EQ、Crossfeed 与声场宽度；EQ/声场在下次播放生效。",
-            style = MaterialTheme.typography.bodySmall,
-        )
+        PresetSection(state, actions)
 
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
@@ -421,6 +407,140 @@ fun QuickSettingsContent(
     }
 }
 
+/**
+ * Built-in scenario presets plus the user's saved presets. Shared by the
+ * quick-settings sheet (minimal/immersive UIs) and the HiFi advanced
+ * settings, so presets are reachable from every UI version.
+ */
+@Composable
+fun PresetSection(state: PlayerState, actions: PlayerActions) {
+    var presetDialogOpen by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
+    var deleteDialogOpen by remember { mutableStateOf(false) }
+
+    Text("一键预设", style = MaterialTheme.typography.bodyLarge)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SoundPreset.entries.forEach { preset ->
+            FilterChip(
+                selected = false,
+                onClick = { actions.applyPreset(preset) },
+                label = { Text(preset.label) },
+                enabled = !state.playing,
+            )
+        }
+    }
+    Text(
+        "预设会切换 EQ、Crossfeed、声场、多段压缩与线性相位；下次播放生效。",
+        style = MaterialTheme.typography.bodySmall,
+    )
+
+    Spacer(Modifier.height(8.dp))
+    Text("我的预设", style = MaterialTheme.typography.bodyLarge)
+    if (state.userPresets.isEmpty()) {
+        Text(
+            "调好 16 段 EQ 后点「存为预设」，把当前 EQ 与开关一起保存。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            state.userPresets.forEach { preset ->
+                FilterChip(
+                    selected = false,
+                    onClick = { actions.applyUserPreset(preset) },
+                    label = { Text(preset.name) },
+                    enabled = !state.playing,
+                )
+            }
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = {
+                presetName = ""
+                presetDialogOpen = true
+            },
+            enabled = !state.playing,
+        ) {
+            Text("存为预设")
+        }
+        TextButton(
+            onClick = { deleteDialogOpen = true },
+            enabled = !state.playing && state.userPresets.isNotEmpty(),
+        ) {
+            Text("删除预设")
+        }
+    }
+
+    if (presetDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { presetDialogOpen = false },
+            title = { Text("保存为预设") },
+            text = {
+                Column {
+                    Text("给当前的 EQ 与开关组合起个名字（同名覆盖）：")
+                    OutlinedTextField(
+                        value = presetName,
+                        onValueChange = { presetName = it },
+                        singleLine = true,
+                        label = { Text("名称") },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        actions.saveUserPreset(presetName)
+                        presetDialogOpen = false
+                    },
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { presetDialogOpen = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    if (deleteDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteDialogOpen = false },
+            title = { Text("删除用户预设") },
+            text = {
+                Column {
+                    state.userPresets.forEach { preset ->
+                        TextButton(
+                            onClick = {
+                                actions.deleteUserPreset(preset.name)
+                                deleteDialogOpen = false
+                            },
+                        ) {
+                            Text(preset.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { deleteDialogOpen = false }) {
+                    Text("关闭")
+                }
+            },
+        )
+    }
+}
+
 @Composable
 fun AdvancedSettingsContent(
     state: PlayerState,
@@ -432,7 +552,9 @@ fun AdvancedSettingsContent(
         Spacer(Modifier.height(8.dp))
         Text(state.summary, style = MaterialTheme.typography.bodySmall)
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+        PresetSection(state, actions)
+        Spacer(Modifier.height(12.dp))
         SettingsSwitch(
             label = "处理模式（同族升频）",
             checked = state.processing,
@@ -518,6 +640,69 @@ fun AdvancedSettingsContent(
         }
         Text(
             "关闭限制器时，大电平或大幅 EQ 提升可能削波。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        Spacer(Modifier.height(8.dp))
+        SettingsSwitch(
+            label = "线性相位 FIR（EQ）",
+            checked = state.eqLinearPhase,
+            onCheckedChange = actions.setEqLinearPhase,
+            enabled = !state.playing,
+        )
+        Text(
+            "更精准的 EQ 算法，代价是约 35ms 延迟；超过 96kHz 自动退回普通模式。" +
+                "当前：" + when {
+                    !state.playing -> "—"
+                    state.firDegraded -> "已自动降级"
+                    state.linearPhaseActive -> "线性相位运行中"
+                    else -> "未生效"
+                },
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        Spacer(Modifier.height(8.dp))
+        SettingsSwitch(
+            label = "多段压缩（低/中/高）",
+            checked = state.multibandEnabled,
+            onCheckedChange = actions.setMultibandEnabled,
+            enabled = !state.playing,
+        )
+        if (state.multibandEnabled) {
+            Text(
+                "分频点：" + state.multibandLowHz.roundToInt() + " / " +
+                    state.multibandHighHz.roundToInt() + " Hz",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Slider(
+                value = state.multibandLowHz.toFloat(),
+                onValueChange = { actions.setMultibandLowHz(it.toDouble()) },
+                valueRange = 50f..500f,
+                enabled = !state.playing,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Slider(
+                value = state.multibandHighHz.toFloat(),
+                onValueChange = { actions.setMultibandHighHz(it.toDouble()) },
+                valueRange = 1000f..5000f,
+                enabled = !state.playing,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                "低频阈值：" + String.format(Locale.US, "%.0f", state.multibandThresholdDb) +
+                    " dBFS",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Slider(
+                value = state.multibandThresholdDb.toFloat(),
+                onValueChange = { actions.setMultibandThresholdDb(it.toDouble()) },
+                valueRange = -30f..0f,
+                enabled = !state.playing,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Text(
+            "开启后取代单段限制器；低频段压缩更狠，用于压住爆炸/鼓点等瞬态。",
             style = MaterialTheme.typography.bodySmall,
         )
 

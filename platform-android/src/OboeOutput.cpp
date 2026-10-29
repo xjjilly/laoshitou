@@ -5,10 +5,11 @@
 
 #include <android/log.h>
 
-#include "dsp/DspChain.h"
-
 #include <cstddef>
 #include <cstring>
+#include <vector>
+
+#include "dsp/DspChain.h"
 
 namespace audio {
 namespace {
@@ -48,14 +49,12 @@ bool OboeOutput::open(int requested_sample_rate, int channels) {
   const int actual_rate = stream_->getSampleRate();
   const oboe::SharingMode sharing = stream_->getSharingMode();
 
-  __android_log_print(ANDROID_LOG_INFO, kLogTag,
-                      "opened: sharing=%d format=%d rate=%d channels=%d",
-                      static_cast<int>(sharing), static_cast<int>(format),
-                      actual_rate, actual_channels);
+  __android_log_print(ANDROID_LOG_INFO, kLogTag, "opened: sharing=%s format=%d rate=%d channels=%d",
+                      sharing == oboe::SharingMode::Exclusive ? "exclusive" : "shared",
+                      static_cast<int>(format), actual_rate, actual_channels);
 
   if (format != oboe::AudioFormat::Float || actual_channels != channels) {
-    __android_log_print(ANDROID_LOG_ERROR, kLogTag,
-                        "unsupported stream: format=%d channels=%d",
+    __android_log_print(ANDROID_LOG_ERROR, kLogTag, "unsupported stream: format=%d channels=%d",
                         static_cast<int>(format), actual_channels);
     stream_->close();
     stream_.reset();
@@ -64,8 +63,7 @@ bool OboeOutput::open(int requested_sample_rate, int channels) {
 
   channels_.store(actual_channels, std::memory_order_relaxed);
   actual_sample_rate_.store(actual_rate, std::memory_order_relaxed);
-  exclusive_.store(sharing == oboe::SharingMode::Exclusive,
-                   std::memory_order_relaxed);
+  exclusive_.store(sharing == oboe::SharingMode::Exclusive, std::memory_order_relaxed);
   disconnected_.store(false, std::memory_order_relaxed);
   silence_expected_.store(false, std::memory_order_relaxed);
   paused_.store(false, std::memory_order_relaxed);
@@ -152,8 +150,8 @@ int64_t OboeOutput::underrun_count() const noexcept {
   return underruns_.load(std::memory_order_relaxed);
 }
 
-oboe::DataCallbackResult OboeOutput::onAudioReady(
-    oboe::AudioStream* /*stream*/, void* audio_data, int32_t num_frames) {
+oboe::DataCallbackResult OboeOutput::onAudioReady(oboe::AudioStream* /*stream*/, void* audio_data,
+                                                  int32_t num_frames) {
   const int channels = channels_.load(std::memory_order_relaxed);
   if (audio_data == nullptr || channels <= 0 || num_frames <= 0) {
     return oboe::DataCallbackResult::Continue;
@@ -181,8 +179,7 @@ oboe::DataCallbackResult OboeOutput::onAudioReady(
     std::memset(out + frames_read * channel_count, 0,
                 missing_frames * channel_count * sizeof(float));
     if (!silence_expected_.load(std::memory_order_relaxed)) {
-      underruns_.fetch_add(static_cast<int64_t>(missing_frames),
-                           std::memory_order_relaxed);
+      underruns_.fetch_add(static_cast<int64_t>(missing_frames), std::memory_order_relaxed);
     }
   }
 
@@ -191,8 +188,7 @@ oboe::DataCallbackResult OboeOutput::onAudioReady(
     chain->process(out, num_frames, channels);
   }
 
-  const float target =
-      paused ? 0.0f : target_gain_.load(std::memory_order_relaxed);
+  const float target = paused ? 0.0f : target_gain_.load(std::memory_order_relaxed);
   const float step = (target - current_gain_) / static_cast<float>(frames);
   float gain = current_gain_;
   for (std::size_t frame = 0; frame < frames; ++frame) {
@@ -207,11 +203,9 @@ oboe::DataCallbackResult OboeOutput::onAudioReady(
   return oboe::DataCallbackResult::Continue;
 }
 
-void OboeOutput::onErrorAfterClose(oboe::AudioStream* /*stream*/,
-                                   oboe::Result error) {
+void OboeOutput::onErrorAfterClose(oboe::AudioStream* /*stream*/, oboe::Result error) {
   disconnected_.store(true, std::memory_order_relaxed);
-  __android_log_print(ANDROID_LOG_ERROR, kLogTag, "stream closed: %d",
-                      static_cast<int>(error));
+  __android_log_print(ANDROID_LOG_ERROR, kLogTag, "stream closed: %d", static_cast<int>(error));
 }
 
 }  // namespace audio

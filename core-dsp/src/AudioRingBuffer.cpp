@@ -46,15 +46,13 @@ AudioRingBuffer::AudioRingBuffer(std::size_t capacity_frames, int channels)
   }
 
   const auto channel_count = static_cast<std::size_t>(channels);
-  if (capacity_frames >
-      std::numeric_limits<std::size_t>::max() / channel_count) {
+  if (capacity_frames > std::numeric_limits<std::size_t>::max() / channel_count) {
     throw std::length_error("AudioRingBuffer: capacity overflow");
   }
   const std::size_t requested_samples = capacity_frames * channel_count;
   const std::size_t sample_capacity = NextPowerOfTwo(requested_samples);
 
-  if (sample_capacity >
-      static_cast<std::size_t>(std::numeric_limits<ring_buffer_size_t>::max())) {
+  if (sample_capacity > static_cast<std::size_t>(std::numeric_limits<ring_buffer_size_t>::max())) {
     throw std::length_error("AudioRingBuffer: exceeds ring_buffer_size_t");
   }
 
@@ -62,10 +60,8 @@ AudioRingBuffer::AudioRingBuffer(std::size_t capacity_frames, int channels)
   impl_->channels = channels;
   impl_->capacity_frames = sample_capacity / channel_count;
 
-  const ring_buffer_size_t element_count =
-      static_cast<ring_buffer_size_t>(sample_capacity);
-  if (PaUtil_InitializeRingBuffer(&impl_->ring,
-                                  static_cast<ring_buffer_size_t>(sizeof(float)),
+  const ring_buffer_size_t element_count = static_cast<ring_buffer_size_t>(sample_capacity);
+  if (PaUtil_InitializeRingBuffer(&impl_->ring, static_cast<ring_buffer_size_t>(sizeof(float)),
                                   element_count, impl_->storage.data()) != 0) {
     throw std::runtime_error("AudioRingBuffer: initialization failed");
   }
@@ -77,8 +73,7 @@ AudioRingBuffer::AudioRingBuffer(AudioRingBuffer&&) noexcept = default;
 
 AudioRingBuffer& AudioRingBuffer::operator=(AudioRingBuffer&&) noexcept = default;
 
-std::size_t AudioRingBuffer::write(const float* interleaved,
-                                   std::size_t frames) noexcept {
+std::size_t AudioRingBuffer::write(const float* interleaved, std::size_t frames) noexcept {
   if (interleaved == nullptr || frames == 0) {
     return 0;
   }
@@ -88,13 +83,12 @@ std::size_t AudioRingBuffer::write(const float* interleaved,
 
   const auto channel_count = static_cast<std::size_t>(impl_->channels);
   const std::size_t elements = frames * channel_count;
-  const ring_buffer_size_t written = PaUtil_WriteRingBuffer(
-      &impl_->ring, interleaved, static_cast<ring_buffer_size_t>(elements));
+  const ring_buffer_size_t written =
+      PaUtil_WriteRingBuffer(&impl_->ring, interleaved, static_cast<ring_buffer_size_t>(elements));
   return static_cast<std::size_t>(written) / channel_count;
 }
 
-std::size_t AudioRingBuffer::read(float* interleaved,
-                                  std::size_t frames) noexcept {
+std::size_t AudioRingBuffer::read(float* interleaved, std::size_t frames) noexcept {
   if (interleaved == nullptr || frames == 0) {
     return 0;
   }
@@ -104,32 +98,24 @@ std::size_t AudioRingBuffer::read(float* interleaved,
 
   const auto channel_count = static_cast<std::size_t>(impl_->channels);
   const std::size_t elements = frames * channel_count;
-  const ring_buffer_size_t read_count = PaUtil_ReadRingBuffer(
-      &impl_->ring, interleaved, static_cast<ring_buffer_size_t>(elements));
+  const ring_buffer_size_t read_count =
+      PaUtil_ReadRingBuffer(&impl_->ring, interleaved, static_cast<ring_buffer_size_t>(elements));
   return static_cast<std::size_t>(read_count) / channel_count;
 }
 
 std::size_t AudioRingBuffer::available_read_frames() const noexcept {
-  const ring_buffer_size_t available =
-      PaUtil_GetRingBufferReadAvailable(&impl_->ring);
-  return static_cast<std::size_t>(available) /
-         static_cast<std::size_t>(impl_->channels);
+  const ring_buffer_size_t available = PaUtil_GetRingBufferReadAvailable(&impl_->ring);
+  return static_cast<std::size_t>(available) / static_cast<std::size_t>(impl_->channels);
 }
 
 std::size_t AudioRingBuffer::available_write_frames() const noexcept {
-  const ring_buffer_size_t available =
-      PaUtil_GetRingBufferWriteAvailable(&impl_->ring);
-  return static_cast<std::size_t>(available) /
-         static_cast<std::size_t>(impl_->channels);
+  const ring_buffer_size_t available = PaUtil_GetRingBufferWriteAvailable(&impl_->ring);
+  return static_cast<std::size_t>(available) / static_cast<std::size_t>(impl_->channels);
 }
 
-void AudioRingBuffer::reset() noexcept {
-  PaUtil_FlushRingBuffer(&impl_->ring);
-}
+void AudioRingBuffer::reset() noexcept { PaUtil_FlushRingBuffer(&impl_->ring); }
 
-std::size_t AudioRingBuffer::capacity_frames() const noexcept {
-  return impl_->capacity_frames;
-}
+std::size_t AudioRingBuffer::capacity_frames() const noexcept { return impl_->capacity_frames; }
 
 int AudioRingBuffer::channels() const noexcept { return impl_->channels; }
 

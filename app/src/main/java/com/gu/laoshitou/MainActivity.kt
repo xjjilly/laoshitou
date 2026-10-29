@@ -45,8 +45,10 @@ import com.gu.laoshitou.ui.PlayMode
 import com.gu.laoshitou.ui.PlayerActions
 import com.gu.laoshitou.ui.PlayerState
 import com.gu.laoshitou.ui.SoundPreset
+import com.gu.laoshitou.ui.SoundPresetCatalog
 import com.gu.laoshitou.ui.TrackItem
 import com.gu.laoshitou.ui.UiVersion
+import com.gu.laoshitou.ui.UserPreset
 import com.gu.laoshitou.ui.eqEditorMaxDb
 import java.io.File
 import java.util.Locale
@@ -58,6 +60,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -150,6 +154,12 @@ private fun AppRoot() {
             brirPath = settings.getString("brir_path", "") ?: ""
             brirName = settings.getString("brir_name", "") ?: ""
             brirMix = settings.getFloat("brir_mix", 0.35f).toDouble()
+            eqLinearPhase = settings.getBoolean("eq_linear_phase", false)
+            multibandEnabled = settings.getBoolean("multiband_enabled", false)
+            multibandLowHz = settings.getFloat("multiband_low_hz", 200f).toDouble()
+            multibandHighHz = settings.getFloat("multiband_high_hz", 2000f).toDouble()
+            multibandThresholdDb = settings.getFloat("multiband_threshold_db", -12f).toDouble()
+            userPresets = parseUserPresets(settings.getString("user_presets", null))
         }
     }
     val powerManager = remember { context.getSystemService(PowerManager::class.java) }
@@ -173,6 +183,19 @@ private fun AppRoot() {
         }
     }
 
+    fun writePresetFile(name: String, content: String): String {
+        val directory = File(context.getExternalFilesDir(null), "EQ").apply { mkdirs() }
+        val file = File(directory, name)
+        file.writeText(content)
+        return file.absolutePath
+    }
+
+    /** The EQ profile to hand to the engine; empty when nothing is loadable. */
+    fun effectiveEqPath(): String {
+        val path = state.eqPath
+        return if (path.isNotEmpty() && File(path).exists()) path else ""
+    }
+
     fun saveBrirSettings() {
         settings.edit()
             .putBoolean("brir_enabled", state.brirEnabled)
@@ -180,6 +203,104 @@ private fun AppRoot() {
             .putString("brir_name", state.brirName)
             .putFloat("brir_mix", state.brirMix.toFloat())
             .apply()
+    }
+
+    fun saveDspSettings() {
+        settings.edit()
+            .putBoolean("eq_linear_phase", state.eqLinearPhase)
+            .putBoolean("multiband_enabled", state.multibandEnabled)
+            .putFloat("multiband_low_hz", state.multibandLowHz.toFloat())
+            .putFloat("multiband_high_hz", state.multibandHighHz.toFloat())
+            .putFloat("multiband_threshold_db", state.multibandThresholdDb.toFloat())
+            .apply()
+    }
+
+    fun saveUserPresets() {
+        settings.edit()
+            .putString("user_presets", encodeUserPresets(state.userPresets))
+            .apply()
+    }
+
+    /** Snapshot of the live editor grid + DSP switches. */
+    fun captureUserPreset(name: String): UserPreset = UserPreset(
+        name = name,
+        gains = state.eqEditorGains,
+        preamp = state.eqEditorPreamp,
+        crossfeed = state.crossfeed,
+        crossfeedWidth = state.crossfeedWidth,
+        stereoWidth = state.stereoWidth,
+        loudness = state.loudness,
+        multiband = state.multibandEnabled,
+        multibandThresholdDb = state.multibandThresholdDb,
+        linearPhase = state.eqLinearPhase,
+    )
+
+    fun saveUserPreset(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            state.status = "预设名称不能为空"
+            return
+        }
+        val preset = captureUserPreset(trimmed)
+        val existing = state.userPresets.indexOfFirst { it.name == trimmed }
+        state.userPresets = if (existing >= 0) {
+            state.userPresets.toMutableList().apply { this[existing] = preset }
+        } else {
+            state.userPresets + preset
+        }
+        saveUserPresets()
+        state.status = "已保存用户预设：$trimmed"
+    }
+
+    fun applyUserPreset(preset: UserPreset) {
+        scope.launch {
+            val text = buildVisualEqProfileText(preset.gains, preset.preamp)
+            val path = withContext(Dispatchers.IO) {
+                writePresetFile("user_${preset.name.hashCode()}.txt", text)
+            }
+            state.eqPath = path
+            state.eqName = preset.name
+            state.crossfeed = preset.crossfeed
+            state.crossfeedWidth = preset.crossfeedWidth
+            state.stereoWidth = preset.stereoWidth
+            state.loudness = preset.loudness
+            state.multibandEnabled = preset.multiband
+            state.multibandThresholdDb = preset.multibandThresholdDb
+            state.eqLinearPhase = preset.linearPhase
+            state.eqEditorGains = preset.gains
+            state.eqEditorPreamp = preset.preamp
+            settings.edit()
+                .putString("eq_editor_gains", preset.gains.joinToString(","))
+                .putFloat("eq_editor_preamp", preset.preamp.toFloat())
+                .putBoolean("use_visual_eq", false)
+                .apply()
+            saveDspSettings()
+            state.status = "已应用用户预设：${preset.name}（下次播放生效）"
+        }
+    }
+
+    fun deleteUserPreset(name: String) {
+        state.userPresets = state.userPresets.filterNot { it.name == name }
+        saveUserPresets()
+        state.status = "已删除用户预设：$name"
+    }
+
+    /** Copies the bundled BRIR samples into the app IR folder on first run. */
+    fun ensureBundledIrs() {
+        runCatching {
+            val target = File(context.getExternalFilesDir(null), "IR").apply { mkdirs() }
+            val bundled = context.assets.list("ir")?.filter {
+                it.endsWith(".wav", ignoreCase = true)
+            } ?: emptyList()
+            bundled.forEach { name ->
+                val destination = File(target, name)
+                if (!destination.exists()) {
+                    context.assets.open("ir/$name").use { input ->
+                        destination.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+        }
     }
 
     fun refreshIrFiles() {
@@ -204,13 +325,6 @@ private fun AppRoot() {
         }
     }
 
-    fun writePresetFile(name: String, content: String): String {
-        val directory = File(context.getExternalFilesDir(null), "EQ").apply { mkdirs() }
-        val file = File(directory, name)
-        file.writeText(content)
-        return file.absolutePath
-    }
-
     fun applyEqEditor() {
         val text = buildVisualEqProfileText(state.eqEditorGains, state.eqEditorPreamp)
         scope.launch {
@@ -219,12 +333,26 @@ private fun AppRoot() {
             }
             state.eqPath = path
             state.eqName = "可视化 16 段"
-            state.status = "已应用 16 段 EQ（下次播放生效）"
             settings.edit()
                 .putString("eq_editor_gains", state.eqEditorGains.joinToString(","))
                 .putFloat("eq_editor_preamp", state.eqEditorPreamp.toFloat())
                 .putBoolean("use_visual_eq", true)
                 .apply()
+            // Live update while playing: the native chain rebuilds the biquads
+            // in place (or hot-swaps the FIR kernel) without touching the
+            // audio callback.
+            val appliedLive = state.playing && withContext(Dispatchers.Default) {
+                NativeBridge.updateEq(
+                    state.eqEditorGains.toFloatArray(),
+                    EqEditorFrequencies.map { it.toFloat() }.toFloatArray(),
+                    state.eqEditorPreamp,
+                )
+            }
+            state.status = if (appliedLive) {
+                "已实时应用 16 段 EQ"
+            } else {
+                "已应用 16 段 EQ（下次播放生效）"
+            }
         }
     }
 
@@ -236,6 +364,11 @@ private fun AppRoot() {
         crossfeedWidth: Double,
         stereoWidth: Double,
         loudness: Boolean,
+        multiband: Boolean = false,
+        multibandThresholdDb: Double = -12.0,
+        linearPhase: Boolean = false,
+        gains: List<Float>? = null,
+        preamp: Double = 0.0,
     ) {
         state.eqPath = eqPath
         state.eqName = eqName
@@ -243,7 +376,19 @@ private fun AppRoot() {
         state.crossfeedWidth = crossfeedWidth
         state.stereoWidth = stereoWidth
         state.loudness = loudness
-        state.status = "已应用预设：${preset.label}（EQ/声场下次播放生效）"
+        state.multibandEnabled = multiband
+        state.multibandThresholdDb = multibandThresholdDb
+        state.eqLinearPhase = linearPhase
+        if (gains != null) {
+            state.eqEditorGains = gains
+            state.eqEditorPreamp = preamp
+            settings.edit()
+                .putString("eq_editor_gains", gains.joinToString(","))
+                .putFloat("eq_editor_preamp", preamp.toFloat())
+                .apply()
+        }
+        saveDspSettings()
+        state.status = "已应用预设：${preset.label}（EQ/声场/开关下次播放生效）"
         settings.edit().putBoolean("use_visual_eq", false).apply()
     }
 
@@ -282,6 +427,30 @@ private fun AppRoot() {
                     }
                     applyPresetState(
                         preset, path, "近场书架（内置）", true, 0.50, 1.10, false,
+                    )
+                }
+            }
+            SoundPreset.Fps, SoundPreset.Voice, SoundPreset.Pop, SoundPreset.Rock,
+            SoundPreset.Classical, SoundPreset.Bass, SoundPreset.Treble, SoundPreset.Movie -> {
+                val spec = SoundPresetCatalog[preset] ?: return
+                scope.launch {
+                    val text = buildVisualEqProfileText(spec.gains, spec.preampDb)
+                    val path = withContext(Dispatchers.IO) {
+                        writePresetFile("preset_${preset.name.lowercase()}.txt", text)
+                    }
+                    applyPresetState(
+                        preset = preset,
+                        eqPath = path,
+                        eqName = preset.label,
+                        crossfeed = spec.crossfeed,
+                        crossfeedWidth = spec.crossfeedWidth,
+                        stereoWidth = spec.stereoWidth,
+                        loudness = spec.loudness,
+                        multiband = spec.multiband,
+                        multibandThresholdDb = spec.multibandThresholdDb,
+                        linearPhase = spec.linearPhase,
+                        gains = spec.gains,
+                        preamp = spec.preampDb,
                     )
                 }
             }
@@ -324,7 +493,7 @@ private fun AppRoot() {
                             path = cacheFile.absolutePath,
                             displayName = displayName,
                             processing = state.processing,
-                            eqPath = state.eqPath,
+                            eqPath = effectiveEqPath(),
                             crossfeed = state.crossfeed,
                             eqCascade = state.eqCascade,
                             eqUseSlope = state.eqSlopeEnabled,
@@ -341,6 +510,11 @@ private fun AppRoot() {
             brirPath = state.brirPath,
             brirEnabled = state.brirEnabled,
             brirMix = state.brirMix,
+            eqLinearPhase = state.eqLinearPhase,
+            multibandEnabled = state.multibandEnabled,
+            multibandLowHz = state.multibandLowHz,
+            multibandHighHz = state.multibandHighHz,
+            multibandThresholdDb = state.multibandThresholdDb,
                         )
                     } catch (error: Exception) {
                         PlaybackStartResult(false, "读取文件失败：${error.message}")
@@ -674,7 +848,7 @@ private fun AppRoot() {
             path = path,
             displayName = displayName,
             processing = state.processing,
-            eqPath = state.eqPath,
+            eqPath = effectiveEqPath(),
             crossfeed = state.crossfeed,
             eqCascade = state.eqCascade,
             eqUseSlope = state.eqSlopeEnabled,
@@ -691,6 +865,11 @@ private fun AppRoot() {
             brirPath = state.brirPath,
             brirEnabled = state.brirEnabled,
             brirMix = state.brirMix,
+            eqLinearPhase = state.eqLinearPhase,
+            multibandEnabled = state.multibandEnabled,
+            multibandLowHz = state.multibandLowHz,
+            multibandHighHz = state.multibandHighHz,
+            multibandThresholdDb = state.multibandThresholdDb,
         )
         state.playing = result.started
         state.paused = false
@@ -740,6 +919,11 @@ private fun AppRoot() {
                 brirPath = "",
                 brirEnabled = false,
                 brirMix = 0.0,
+                eqLinearPhase = false,
+                multibandEnabled = false,
+                multibandLowHz = 200.0,
+                multibandHighHz = 2000.0,
+                multibandThresholdDb = -12.0,
             )
             state.playing = result.started
             state.paused = false
@@ -886,6 +1070,31 @@ private fun AppRoot() {
             saveBrirSettings()
             state.status = "已选择 BRIR：$name（下次播放生效）"
         },
+        setEqLinearPhase = { enabled ->
+            state.eqLinearPhase = enabled
+            saveDspSettings()
+            state.status = "线性相位 FIR：" + (if (enabled) "开" else "关") + "（下次播放生效）"
+        },
+        setMultibandEnabled = { enabled ->
+            state.multibandEnabled = enabled
+            saveDspSettings()
+            state.status = "多段压缩：" + (if (enabled) "开" else "关") + "（下次播放生效）"
+        },
+        setMultibandLowHz = {
+            state.multibandLowHz = it.coerceIn(50.0, state.multibandHighHz - 100.0)
+            saveDspSettings()
+        },
+        setMultibandHighHz = {
+            state.multibandHighHz = it.coerceIn(state.multibandLowHz + 100.0, 5000.0)
+            saveDspSettings()
+        },
+        setMultibandThresholdDb = {
+            state.multibandThresholdDb = it.coerceIn(-30.0, 0.0)
+            saveDspSettings()
+        },
+        saveUserPreset = ::saveUserPreset,
+        deleteUserPreset = ::deleteUserPreset,
+        applyUserPreset = ::applyUserPreset,
         applyPreset = ::applyPreset,
         clearEq = {
             state.eqPath = ""
@@ -999,6 +1208,7 @@ private fun AppRoot() {
     }
 
     LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { ensureBundledIrs() }
         refreshIrFiles()
         if (settings.getBoolean("use_visual_eq", false)) {
             val text = buildVisualEqProfileText(
@@ -1095,6 +1305,65 @@ private fun parsePersistedGains(text: String?): List<Float> {
     }
 }
 
+private fun encodeUserPresets(presets: List<UserPreset>): String {
+    val array = JSONArray()
+    presets.forEach { preset ->
+        array.put(
+            JSONObject().apply {
+                put("name", preset.name)
+                put("gains", JSONArray(preset.gains))
+                put("preamp", preset.preamp)
+                put("crossfeed", preset.crossfeed)
+                put("crossfeed_width", preset.crossfeedWidth)
+                put("stereo_width", preset.stereoWidth)
+                put("loudness", preset.loudness)
+                put("multiband", preset.multiband)
+                put("multiband_threshold_db", preset.multibandThresholdDb)
+                put("linear_phase", preset.linearPhase)
+            },
+        )
+    }
+    return array.toString()
+}
+
+private fun parseUserPresets(text: String?): List<UserPreset> {
+    if (text.isNullOrEmpty()) {
+        return emptyList()
+    }
+    return runCatching {
+        val array = JSONArray(text)
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val name = item.optString("name").trim()
+                if (name.isEmpty()) {
+                    continue
+                }
+                val gainsArray = item.optJSONArray("gains") ?: JSONArray()
+                val gains = List(EqEditorFrequencies.size) { band ->
+                    gainsArray.optDouble(band, 0.0).toFloat().coerceIn(-18f, 18f)
+                }
+                add(
+                    UserPreset(
+                        name = name,
+                        gains = gains,
+                        preamp = item.optDouble("preamp", 0.0).coerceIn(-24.0, 12.0),
+                        crossfeed = item.optBoolean("crossfeed", false),
+                        crossfeedWidth = item.optDouble("crossfeed_width", 0.40)
+                            .coerceIn(0.0, 1.0),
+                        stereoWidth = item.optDouble("stereo_width", 1.0).coerceIn(0.0, 1.5),
+                        loudness = item.optBoolean("loudness", false),
+                        multiband = item.optBoolean("multiband", false),
+                        multibandThresholdDb = item.optDouble("multiband_threshold_db", -12.0)
+                            .coerceIn(-30.0, 0.0),
+                        linearPhase = item.optBoolean("linear_phase", false),
+                    ),
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
+}
+
 private fun buildVisualEqProfileText(gains: List<Float>, preamp: Double): String {
     return buildString {
         append("Preamp: ")
@@ -1185,6 +1454,8 @@ private fun refreshMetrics(state: PlayerState) {
     state.crossfeedActive = NativeBridge.playbackCrossfeedEnabled()
     state.limiterActive = NativeBridge.playbackLimiterEnabled()
     state.brirActive = NativeBridge.playbackBrirActive()
+    state.linearPhaseActive = NativeBridge.playbackLinearPhaseActive()
+    state.firDegraded = NativeBridge.playbackFirDegraded()
     state.paused = NativeBridge.isPlaybackPaused()
     state.ended = NativeBridge.playbackEnded()
 }

@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">老石头</string>
+    <!-- 免费/开源声明：同时作为 APK 内的文字水印保留在资源表中。 -->
+    <string name="free_software_notice">本软件为开源免费项目，严禁商业倒卖。首发于 GitHub：github.com/xjjilly/laoshitou</string>
 </resources>

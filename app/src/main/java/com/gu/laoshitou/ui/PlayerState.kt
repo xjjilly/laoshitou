@@ -24,7 +24,29 @@ enum class SoundPreset(val label: String) {
     NightIem("深夜动铁"),
     Nearfield("近场书架"),
     Live("现场 Live"),
+    Fps("FPS 听声辩位"),
+    Voice("语音/播客清晰"),
+    Pop("流行"),
+    Rock("摇滚"),
+    Classical("古典/原声"),
+    Bass("低音增强"),
+    Treble("高音/空气感"),
+    Movie("电影"),
 }
+
+/** A user preset saved from the live 16-band editor and the DSP switches. */
+data class UserPreset(
+    val name: String,
+    val gains: List<Float>,
+    val preamp: Double,
+    val crossfeed: Boolean,
+    val crossfeedWidth: Double,
+    val stereoWidth: Double,
+    val loudness: Boolean,
+    val multiband: Boolean,
+    val multibandThresholdDb: Double,
+    val linearPhase: Boolean,
+)
 
 data class TrackItem(
     val path: String,
@@ -80,6 +102,14 @@ class PlayerState(
     var brirMix by mutableStateOf(0.35)
     var brirActive by mutableStateOf(false)
     var irFiles by mutableStateOf<List<IrItem>>(emptyList())
+    var eqLinearPhase by mutableStateOf(false)
+    var linearPhaseActive by mutableStateOf(false)
+    var firDegraded by mutableStateOf(false)
+    var multibandEnabled by mutableStateOf(false)
+    var multibandLowHz by mutableStateOf(200.0)
+    var multibandHighHz by mutableStateOf(2000.0)
+    var multibandThresholdDb by mutableStateOf(-12.0)
+    var userPresets by mutableStateOf<List<UserPreset>>(emptyList())
     var eqCascade by mutableStateOf(false)
     var eqSlopeEnabled by mutableStateOf(false)
     var eqSlope by mutableStateOf(1.0)
@@ -137,6 +167,14 @@ data class PlayerActions(
     val setBrirMix: (Double) -> Unit,
     val refreshIrFiles: () -> Unit,
     val selectIr: (String, String) -> Unit,
+    val setEqLinearPhase: (Boolean) -> Unit,
+    val setMultibandEnabled: (Boolean) -> Unit,
+    val setMultibandLowHz: (Double) -> Unit,
+    val setMultibandHighHz: (Double) -> Unit,
+    val setMultibandThresholdDb: (Double) -> Unit,
+    val saveUserPreset: (String) -> Unit,
+    val deleteUserPreset: (String) -> Unit,
+    val applyUserPreset: (UserPreset) -> Unit,
     val applyPreset: (SoundPreset) -> Unit,
     val clearEq: () -> Unit,
     val setEqCascade: (Boolean) -> Unit,

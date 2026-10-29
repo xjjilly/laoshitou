@@ -2,6 +2,8 @@
 
 本地优先、音质优先的 Android 播放器。**无广告、无在线曲库、无账号、无遥测，未申请 `INTERNET` 权限**；解码、DSP、文件访问全部在本机完成，系统云备份也已关闭。音乐库读取手机根目录的 `laoshitou/` 文件夹，为此申请「所有文件访问」权限。
 
+> **本软件所有代码开源，免费下载。如果你是花钱买的，你被骗了，请立刻退款并举报。**
+
 **作者：[xjjilly](https://github.com/xjjilly)** · **License: [GNU GPLv3](LICENSE)** · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 ## 界面
@@ -12,10 +14,12 @@
 
 ## 核心特性
 
-- **硬核 DSP 链**：16 段可视化 PEQ、PK/LSC/HSC/HPF/LPF、2/4 阶级联、AutoEQ txt/CSV/GraphicEQ 导入、预增益与可调限制器。
+- **硬核 DSP 链**：16 段可视化 PEQ（IIR / 线性相位 FIR）、PK/LSC/HSC/HPF/LPF、2/4 阶级联、AutoEQ txt/CSV/GraphicEQ 导入、预增益与可调限制器、三段多段压缩。
+- **预设系统**：12 个场景预设（FPS 听声辩位、电影、流行、摇滚、古典、播客、深夜、低音增强、高音、Live 等）；调好的 16 段 EQ 与开关可存为**用户预设**，重启保留。
+- **EQ 实时调音**：播放中应用 16 段 EQ 立即生效（无需重新播放）；选中频点显示精确数值，±0.5dB 微调。
 - **Oboe 低延迟输出**：请求 Exclusive 独占模式，设备不支持时自动回退 Shared；USB DAC 自动 192k。
 - **DSD 与高解析**：DSD64（DSF/DFF，非压缩）本地解码；FLAC/WAV/ALAC/AAC/MP3/APE/WavPack/TTA 等由 FFmpeg 原生解码。
-- **BRIR 卷积混响**：分区 FFT、立体声 BRIR WAV、湿/干比例可调，约 43 ms 分块延迟。
+- **BRIR 卷积混响**：分区 FFT、立体声 BRIR WAV、湿/干比例可调，约 43 ms 分块延迟；内置 9 个 BRIR/HRTF 测试素材（SADIE II 等），首次启动自动复制到应用 IR 目录。
 - **声场控制**：libbs2b Crossfeed 强度、M/S 声场拓宽（0-150%）、响度补偿与限幅保护。
 - **设备切换自动恢复**：蓝牙/有线/USB 路由变化导致 Oboe 断流时自动重开；同采样率保留环形缓冲与 DSP 状态，采样率变化则重建重采样与 DSP 链。
 - **三种界面**：极简 / 沉浸 / 高保真，共享同一播放与曲库状态。
@@ -185,7 +189,7 @@ To build it yourself:
 3. Build:
 
    ```sh
-   E:/Tools/gradle-8.11.1/bin/gradle.bat :app:assembleRelease
+   ./gradlew :app:assembleRelease
    # app/build/outputs/apk/release/app-release.apk
    ```
 
@@ -343,12 +347,10 @@ override is session-only; 192k files play bit-for-bit at 192k when selected.
 - Music from the old app-private location
   (`Android/data/com.gu.laoshitou/files/Music/`) is offered a one-tap
   migration (**迁移旧目录音乐**) when the new folder is empty.
-- Test albums on the device:
-  - `D:\BaiduNetdiskDownload\beyond\BEYOND` →
-    `laoshitou/BEYOND/`: 16 DSD64 `.dff` tracks, played directly.
-  - `D:\BaiduNetdiskDownload\绝对发烧1    SACD` →
-    `laoshitou/绝对发烧1    SACD/`: 12 WAV tracks, 24-bit/192 kHz stereo.
-  The previous FLAC album was removed from the device.
+- Example album layouts on the device:
+  - `音乐/BEYOND` → `laoshitou/BEYOND/`: 16 DSD64 `.dff` tracks, played directly.
+  - `音乐/绝对发烧1 SACD` → `laoshitou/绝对发烧1 SACD/`: 12 WAV tracks,
+    24-bit/192 kHz stereo.
 - The list and the current-track highlight are shared state, so switching
   UI versions does not interrupt playback or lose the selection.
 - Playlist modes are shared by all three UIs:
@@ -449,11 +451,9 @@ adb, Hz), file paths, and command examples are kept as-is.
 Requires CMake 3.22+ and a C++20 compiler.
 
 ```sh
-# This machine uses the llvm-mingw toolchain and the SDK's CMake/Ninja.
 cmake -S . -B build-host -G Ninja \
-  -DCMAKE_C_COMPILER=E:/Tools/llvm-mingw-20261006-ucrt-x86_64/bin/clang.exe \
-  -DCMAKE_CXX_COMPILER=E:/Tools/llvm-mingw-20261006-ucrt-x86_64/bin/clang++.exe \
-  -DCMAKE_MAKE_PROGRAM=E:/Tools/android-sdk/cmake/3.22.1/bin/ninja.exe \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_EXE_LINKER_FLAGS=-static
 cmake --build build-host
 ctest --test-dir build-host --output-on-failure
@@ -467,12 +467,11 @@ once (the exact FFmpeg 7.1 tarball is bundled at
 bash tools/build_ffmpeg_arm64.sh
 ```
 
-Android build (the wrapper points at the network and may time out on this
-machine; the local Gradle 8.11.1 distribution is used instead):
+Android build:
 
 ```sh
-export ANDROID_HOME=E:/Tools/android-sdk
-E:/Tools/gradle-8.11.1/bin/gradle.bat :app:assembleDebug
+export ANDROID_HOME=/path/to/android-sdk
+./gradlew :app:assembleDebug
 ```
 
 ## Sample-rate policy

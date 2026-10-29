@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 老石头 contributors
 
-#include "dsp/AudioRingBuffer.h"
-
 #include <cstddef>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
 
+#include "dsp/AudioRingBuffer.h"
+
 namespace {
 
 int g_failures = 0;
 
-#define CHECK(condition)                                                     \
-  do {                                                                       \
-    if (!(condition)) {                                                      \
-      std::cerr << __FILE__ << ":" << __LINE__                               \
-                << " CHECK failed: " #condition << "\n";                     \
-      ++g_failures;                                                          \
-    }                                                                        \
+#define CHECK(condition)                                                                \
+  do {                                                                                  \
+    if (!(condition)) {                                                                 \
+      std::cerr << __FILE__ << ":" << __LINE__ << " CHECK failed: " #condition << "\n"; \
+      ++g_failures;                                                                     \
+    }                                                                                   \
   } while (false)
 
 std::vector<float> MakeRamp(std::size_t first, std::size_t samples) {

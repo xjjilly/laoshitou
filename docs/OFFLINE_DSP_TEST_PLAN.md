@@ -35,16 +35,14 @@ WAV (PCM 16/24/32 或 float32/64, mono/stereo)
 源码：`tools/hifi_offline.cpp`，构建目标：`hifi_offline`。
 
 ```sh
-# 本机（llvm-mingw + SDK 的 CMake/Ninja）
 cmake -S . -B build-host -G Ninja \
-  -DCMAKE_C_COMPILER=E:/Tools/llvm-mingw-20261006-ucrt-x86_64/bin/clang.exe \
-  -DCMAKE_CXX_COMPILER=E:/Tools/llvm-mingw-20261006-ucrt-x86_64/bin/clang++.exe \
-  -DCMAKE_MAKE_PROGRAM=E:/Tools/android-sdk/cmake/3.22.1/bin/ninja.exe \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_EXE_LINKER_FLAGS=-static
 cmake --build build-host
 
 # 可执行文件
-build-host/tools/hifi_offline.exe
+build-host/tools/hifi_offline
 ```
 
 常用参数：

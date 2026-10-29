@@ -4,6 +4,7 @@
 #include <jni.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -61,8 +62,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startTe
   return JNI_TRUE;
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_gu_laoshitou_NativeBridge_stopTestTone(JNIEnv* /*env*/,
-                                                                                 jobject /*thiz*/) {
+extern "C" JNIEXPORT void JNICALL
+Java_com_gu_laoshitou_NativeBridge_stopTestTone(JNIEnv* /*env*/, jobject /*thiz*/) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
   if (g_engine) {
     g_engine->stop();
@@ -144,7 +145,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFi
     jdouble crossfeed_width, jdouble stereo_width, jboolean loudness_enabled,
     jdouble loudness_volume, jboolean limiter_enabled, jdouble limiter_threshold_db,
     jboolean usb_dac_detected, jboolean auto_usb_192k, jstring brir_path, jboolean brir_enabled,
-    jdouble brir_mix) {
+    jdouble brir_mix, jboolean eq_linear_phase, jboolean multiband_enabled,
+    jdouble multiband_low_hz, jdouble multiband_high_hz, jdouble multiband_threshold_db) {
   if (path == nullptr) {
     return JNI_FALSE;
   }
@@ -185,6 +187,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFi
   options.auto_usb_192k = auto_usb_192k != JNI_FALSE;
   options.brir_enabled = brir_enabled != JNI_FALSE;
   options.brir_mix = static_cast<double>(brir_mix);
+  options.eq_linear_phase = eq_linear_phase != JNI_FALSE;
+  options.multiband.enabled = multiband_enabled != JNI_FALSE;
+  options.multiband.crossover_low_hz = static_cast<double>(multiband_low_hz);
+  options.multiband.crossover_high_hz = static_cast<double>(multiband_high_hz);
+  options.multiband.low.threshold_db = static_cast<double>(multiband_threshold_db);
   if (brir_path != nullptr) {
     const char* brir_chars = env->GetStringUTFChars(brir_path, nullptr);
     if (brir_chars != nullptr) {
@@ -215,8 +222,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFi
   return JNI_TRUE;
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_gu_laoshitou_NativeBridge_stopPlayback(JNIEnv* /*env*/,
-                                                                                 jobject /*thiz*/) {
+extern "C" JNIEXPORT void JNICALL
+Java_com_gu_laoshitou_NativeBridge_stopPlayback(JNIEnv* /*env*/, jobject /*thiz*/) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
   if (g_engine) {
     g_engine->stop();
@@ -362,4 +369,51 @@ extern "C" JNIEXPORT void JNICALL Java_com_gu_laoshitou_NativeBridge_setLoudness
   if (g_engine) {
     g_engine->set_loudness_volume(static_cast<double>(volume));
   }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_updateEq(
+    JNIEnv* env, jobject /*thiz*/, jfloatArray gains, jfloatArray frequencies, jdouble preamp_db) {
+  if (gains == nullptr || frequencies == nullptr) {
+    return JNI_FALSE;
+  }
+  const jsize count = env->GetArrayLength(gains);
+  if (count <= 0 || count > 64 || env->GetArrayLength(frequencies) < count) {
+    return JNI_FALSE;
+  }
+  std::vector<jfloat> gain_values(static_cast<std::size_t>(count));
+  std::vector<jfloat> frequency_values(static_cast<std::size_t>(count));
+  env->GetFloatArrayRegion(gains, 0, count, gain_values.data());
+  env->GetFloatArrayRegion(frequencies, 0, count, frequency_values.data());
+
+  dsp::PeqConfig config;
+  config.preamp_db = static_cast<double>(preamp_db);
+  config.bands.reserve(static_cast<std::size_t>(count));
+  for (jsize i = 0; i < count; ++i) {
+    dsp::PeqBandConfig band;
+    band.type = dsp::PeqFilterType::kPeaking;
+    band.frequency = static_cast<double>(frequency_values[static_cast<std::size_t>(i)]);
+    band.gain_db = static_cast<double>(gain_values[static_cast<std::size_t>(i)]);
+    // Matches EqEditorQ in ui/EqCurve.kt (the 16-band editor grid).
+    band.q = 1.41;
+    band.enabled = std::abs(band.gain_db) >= 0.05;
+    config.bands.push_back(band);
+  }
+
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  if (!g_engine) {
+    return JNI_FALSE;
+  }
+  return g_engine->update_eq_live(config) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackLinearPhaseActive(JNIEnv* /*env*/, jobject /*thiz*/) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return (g_engine && g_engine->eq_linear_phase_active()) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackFirDegraded(JNIEnv* /*env*/, jobject /*thiz*/) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return (g_engine && g_engine->fir_degraded()) ? JNI_TRUE : JNI_FALSE;
 }

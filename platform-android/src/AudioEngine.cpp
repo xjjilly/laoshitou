@@ -24,6 +24,21 @@ constexpr float kAmplitude = 0.1f;
 constexpr int kChannels = 2;
 constexpr std::size_t kBlockFrames = 480;
 
+// 同采样率族内、低于目标率的候选采样率（降序），用于目标率拿不到独占时
+// 逐级降档重试：44.1 族与 48 族各三档。
+std::vector<int> exclusive_fallback_rates(int source_rate, int policy_rate) {
+  const bool family_44 = source_rate % 8000 != 0;
+  const std::vector<int> family =
+      family_44 ? std::vector<int>{176400, 88200, 44100} : std::vector<int>{192000, 96000, 48000};
+  std::vector<int> out;
+  for (int rate : family) {
+    if (rate < policy_rate) {
+      out.push_back(rate);
+    }
+  }
+  return out;
+}
+
 }  // namespace
 
 AudioEngine::~AudioEngine() { stop(); }
@@ -126,6 +141,30 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
 
     output_ = std::make_unique<OboeOutput>();
     bool opened = output_->open(requested_rate, kChannels);
+    if (opened && !output_->is_exclusive() && options.forced_sample_rate <= 0) {
+      // 优先保住独占（处理与直通模式都适用）：目标采样率只能以共享模式打开时
+      // （很多 DAC 的 MMAP 不支持 88.2/176.4k），在同族内逐级降档重试，拿到
+      // 独占为止。共享模式同样无法 bit-perfect（系统混音器参与），因此直通
+      // 模式下用同族整数降档 + 独占也优于共享混音。全族都拿不到独占时回到
+      // 最初的请求率，保持原有行为。
+      const int first_rate = requested_rate;
+      for (int candidate : exclusive_fallback_rates(source_rate, policy_rate)) {
+        output_->stop();
+        if (!output_->open(candidate, kChannels)) {
+          output_->stop();
+          opened = output_->open(first_rate, kChannels);
+          break;
+        }
+        if (output_->is_exclusive()) {
+          requested_rate = candidate;
+          break;
+        }
+      }
+      if (opened && !output_->is_exclusive()) {
+        output_->stop();
+        opened = output_->open(first_rate, kChannels);
+      }
+    }
     if (!opened && requested_rate != source_rate) {
       // The policy target may be supported by another output route but not by
       // the current one. A forced rate that the USB device rejects can make it
@@ -252,6 +291,23 @@ void AudioEngine::set_loudness_volume(double volume) noexcept {
   dsp_chain_.set_loudness_volume(volume);
 }
 
+bool AudioEngine::update_eq_live(const dsp::PeqConfig& config) noexcept {
+  if (!processing_mode_) {
+    return false;
+  }
+  dsp_chain_.update_peq(config);
+  eq_loaded_ = true;
+  return true;
+}
+
+bool AudioEngine::eq_linear_phase_active() const noexcept {
+  return processing_mode_ && dsp_chain_.eq_linear_phase_active();
+}
+
+bool AudioEngine::fir_degraded() const noexcept {
+  return processing_mode_ && dsp_chain_.fir_degraded();
+}
+
 bool AudioEngine::is_paused() const noexcept { return paused_; }
 
 bool AudioEngine::is_running() const noexcept {
@@ -289,8 +345,8 @@ bool AudioEngine::recover_output_impl() {
   const bool was_paused = paused_;
 
   __android_log_print(ANDROID_LOG_WARN, kLogTag,
-                      "output disconnected; reopening (requested=%d actual=%d)",
-                      old_requested, old_actual);
+                      "output disconnected; reopening (requested=%d actual=%d)", old_requested,
+                      old_actual);
 
   // Prefer the original request and the previous actual rate, then the source
   // rate and the platform native rate. Opening the same rate keeps the
@@ -374,13 +430,12 @@ bool AudioEngine::recover_output_impl() {
     producer_.join();
   }
   if (!test_tone_ && eof_now) {
-    __android_log_print(ANDROID_LOG_INFO, kLogTag,
-                        "source ended during reconnect; not restarting");
+    __android_log_print(ANDROID_LOG_INFO, kLogTag, "source ended during reconnect; not restarting");
     return false;
   }
 
-  ring_ = std::make_unique<dsp::AudioRingBuffer>(
-      static_cast<std::size_t>(new_actual) * 2U, kChannels);
+  ring_ =
+      std::make_unique<dsp::AudioRingBuffer>(static_cast<std::size_t>(new_actual) * 2U, kChannels);
   if (!configure_resampler(source_rate, new_actual, options_.resampler_quality)) {
     output_->stop();
     output_.reset();
@@ -409,8 +464,7 @@ bool AudioEngine::recover_output_impl() {
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   if (!output_->start()) {
-    __android_log_print(ANDROID_LOG_ERROR, kLogTag,
-                        "reopen failed: requestStart after rebuild");
+    __android_log_print(ANDROID_LOG_ERROR, kLogTag, "reopen failed: requestStart after rebuild");
     running_.store(false, std::memory_order_release);
     return false;
   }
@@ -482,8 +536,7 @@ bool AudioEngine::configure_resampler(int source_rate, int actual_rate, int qual
     // Auto: BEST is affordable for PCM sources up to 192 kHz (including
     // 192k -> 48k, measured with 0 underruns on the test phone). DSD
     // (352.8 kHz and above) needs MEDIUM to keep up in real time.
-    quality =
-        source_rate > 192000 ? dsp::ResamplerQuality::kMedium : dsp::ResamplerQuality::kBest;
+    quality = source_rate > 192000 ? dsp::ResamplerQuality::kMedium : dsp::ResamplerQuality::kBest;
   } else {
     switch (quality_option) {
       case 1:
@@ -528,6 +581,8 @@ void AudioEngine::configure_processing(int actual_rate, const PlaybackOptions& o
   chain_config.brir_enabled = options.brir_enabled;
   chain_config.brir_path = options.brir_path;
   chain_config.brir_mix = options.brir_mix;
+  chain_config.eq_linear_phase = options.eq_linear_phase;
+  chain_config.multiband = options.multiband;
 
   if (!options.eq_profile_path.empty()) {
     dsp::AutoEqProfile profile;
@@ -553,8 +608,7 @@ void AudioEngine::configure_processing(int actual_rate, const PlaybackOptions& o
   limiter_enabled_ = dsp_chain_.limiter_enabled();
   if (brir_requested) {
     __android_log_print(dsp_chain_.brir_active() ? ANDROID_LOG_INFO : ANDROID_LOG_WARN, kLogTag,
-                        "BRIR %s: %s (mix=%.2f)",
-                        dsp_chain_.brir_active() ? "active" : "failed",
+                        "BRIR %s: %s (mix=%.2f)", dsp_chain_.brir_active() ? "active" : "failed",
                         chain_config.brir_path.c_str(), options.brir_mix);
   }
 }
@@ -562,8 +616,7 @@ void AudioEngine::configure_processing(int actual_rate, const PlaybackOptions& o
 void AudioEngine::update_rate_flags(int source_rate, int actual_rate) noexcept {
   cross_family_fallback_ =
       dsp::ClassifyRateFamily(source_rate) != dsp::ClassifyRateFamily(actual_rate);
-  non_integer_ratio_ =
-      source_rate != actual_rate && !dsp::IsIntegerRatio(source_rate, actual_rate);
+  non_integer_ratio_ = source_rate != actual_rate && !dsp::IsIntegerRatio(source_rate, actual_rate);
   device_limited_ = actual_rate < source_rate;
 }
 

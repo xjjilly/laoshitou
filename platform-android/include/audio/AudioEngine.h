@@ -43,6 +43,13 @@ struct PlaybackOptions {
   double loudness_volume = 1.0;
   bool limiter_enabled = true;
   double limiter_threshold_db = -1.0;
+  // Linear-phase FIR EQ instead of the minimum-phase biquads. Adds
+  // block_size + kernel/2 frames of latency; above 96 kHz the chain
+  // silently falls back to IIR (reported through fir_degraded()).
+  bool eq_linear_phase = false;
+  // 3-band dynamics; when enabled it replaces the single limiter as the
+  // final protection stage.
+  dsp::MultibandConfig multiband;
 };
 
 // Owns the playback pipeline:
@@ -78,6 +85,11 @@ class AudioEngine {
   void set_gain(float gain) noexcept;
   // Updates loudness compensation while playing. 1.0 = no compensation.
   void set_loudness_volume(double volume) noexcept;
+  // Applies a PEQ configuration while playing (control thread only). The
+  // callback never allocates: the biquad coefficients are rebuilt in place
+  // and a linear-phase kernel is hot-swapped on the next block. Returns false
+  // when the stream is not in processing mode (Direct bypasses the chain).
+  bool update_eq_live(const dsp::PeqConfig& config) noexcept;
   [[nodiscard]] bool is_paused() const noexcept;
 
   [[nodiscard]] bool is_running() const noexcept;
@@ -94,6 +106,8 @@ class AudioEngine {
   [[nodiscard]] bool crossfeed_enabled() const noexcept;
   [[nodiscard]] bool limiter_enabled() const noexcept;
   [[nodiscard]] bool brir_active() const noexcept;
+  [[nodiscard]] bool eq_linear_phase_active() const noexcept;
+  [[nodiscard]] bool fir_degraded() const noexcept;
   [[nodiscard]] int64_t underruns() const noexcept;
 
  private:

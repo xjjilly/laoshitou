@@ -1,35 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 老石头 contributors
 
-#include "dsp/Resampler.h"
-
 #include <cmath>
 #include <cstddef>
 #include <iostream>
 #include <vector>
 
+#include "dsp/Resampler.h"
+
 namespace {
 
 int g_failures = 0;
 
-#define CHECK(condition)                                                     \
-  do {                                                                       \
-    if (!(condition)) {                                                      \
-      std::cerr << __FILE__ << ":" << __LINE__                               \
-                << " CHECK failed: " #condition << "\n";                     \
-      ++g_failures;                                                          \
-    }                                                                        \
+#define CHECK(condition)                                                                \
+  do {                                                                                  \
+    if (!(condition)) {                                                                 \
+      std::cerr << __FILE__ << ":" << __LINE__ << " CHECK failed: " #condition << "\n"; \
+      ++g_failures;                                                                     \
+    }                                                                                   \
   } while (false)
 
-std::vector<float> MakeSine(std::size_t frames, double sample_rate,
-                            double frequency, float amplitude) {
+std::vector<float> MakeSine(std::size_t frames, double sample_rate, double frequency,
+                            float amplitude) {
   constexpr double kTwoPi = 6.283185307179586476925286766559;
   std::vector<float> result(frames * 2);
   for (std::size_t i = 0; i < frames; ++i) {
     const auto sample =
-        amplitude * static_cast<float>(std::sin(kTwoPi * frequency *
-                                                static_cast<double>(i) /
-                                                sample_rate));
+        amplitude *
+        static_cast<float>(std::sin(kTwoPi * frequency * static_cast<double>(i) / sample_rate));
     result[i * 2] = sample;
     result[i * 2 + 1] = sample;
   }

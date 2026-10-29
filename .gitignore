@@ -1,10 +1,12 @@
 # Local toolchain and FFmpeg build tree
 .tools/
+.ffmpeg-build*/
 .ffmpeg-build/
 
 # Build output
 build/
 build-host/
+build-juce/
 build-cmake/
 out/
 .cxx/
@@ -33,8 +35,12 @@ keystore.properties
 
 # Release binaries, checksums and generated test audio
 artifacts/
+build-installer/
 .kotlin/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Bulk BRIR database (222 MB, re-downloadable from Zenodo)
+samples/ir/sadie2/

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <complex>
 #include <cstddef>
 #include <memory>
@@ -24,6 +25,12 @@ class PartitionedConvolver {
   void configure(const float* ir, std::size_t ir_length, std::size_t block_size);
   void reset() noexcept;
 
+  // Control-thread hot swap: replaces the IR with another one of the same
+  // length without allocating. The new kernel is transformed into the
+  // inactive double-buffer set and picked up by the next process_block()
+  // call (no mid-block tear).
+  void set_ir(const float* ir) noexcept;
+
   // Processes exactly [block_size] samples. input/output may not be null.
   void process_block(const float* input, float* output) noexcept;
 
@@ -31,12 +38,18 @@ class PartitionedConvolver {
   [[nodiscard]] std::size_t block_size() const noexcept { return block_size_; }
 
  private:
+  // Transforms the IR partitions of [set] (0 or 1) into the frequency domain.
+  void FillSpectra(const float* ir, std::size_t ir_length, int set);
+
   std::unique_ptr<Fft> fft_;
   std::size_t block_size_ = 0;
   std::size_t fft_size_ = 0;
   std::size_t partition_count_ = 0;
   std::size_t history_position_ = 0;
-  std::vector<std::vector<std::complex<float>>> ir_spectra_;
+  // Double-buffered kernel spectra: set_ir() writes the inactive set, the
+  // atomic index flips the active one for the next block.
+  std::vector<std::vector<std::complex<float>>> ir_spectra_[2];
+  std::atomic<int> ir_active_{0};
   std::vector<std::vector<std::complex<float>>> input_history_;
   std::vector<std::complex<float>> accumulator_;
   std::vector<std::complex<float>> time_buffer_;

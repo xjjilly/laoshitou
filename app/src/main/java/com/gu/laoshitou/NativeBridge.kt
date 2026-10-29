@@ -47,6 +47,11 @@ object NativeBridge {
         brirPath: String,
         brirEnabled: Boolean,
         brirMix: Double,
+        eqLinearPhase: Boolean,
+        multibandEnabled: Boolean,
+        multibandLowHz: Double,
+        multibandHighHz: Double,
+        multibandThresholdDb: Double,
     ): Boolean
 
     external fun loadEqProfileForEditor(
@@ -79,4 +84,14 @@ object NativeBridge {
     external fun isPlaybackPaused(): Boolean
     external fun setPlaybackGain(gain: Float)
     external fun setLoudnessVolume(volume: Float)
+
+    /**
+     * Applies the 16-band editor grid while playing (control thread). The
+     * native side rebuilds the biquads in place / hot-swaps the FIR kernel,
+     * so the audio callback never allocates.
+     */
+    external fun updateEq(gains: FloatArray, frequencies: FloatArray, preampDb: Double): Boolean
+
+    external fun playbackLinearPhaseActive(): Boolean
+    external fun playbackFirDegraded(): Boolean
 }

@@ -14,9 +14,29 @@
 namespace dsp {
 namespace {
 
-constexpr std::size_t kBlockSize = 2048;
 constexpr double kMaxIrSeconds = 2.0;
 constexpr float kNormalizePeak = 0.9f;
+// kAuto switches to Direct below this IR length: on PC the time-domain FIR
+// costs ~3% of one core at 4096 taps (48 kHz stereo), and it removes both the
+// frequency-domain memory and the block latency.
+constexpr std::size_t kDirectMaxTaps = 4096;
+constexpr std::size_t kMinBlockSize = 64;
+constexpr std::size_t kMaxBlockSize = 8192;
+
+std::size_t ClampBlockSize(std::size_t block_size) {
+  if (block_size < kMinBlockSize) {
+    return kMinBlockSize;
+  }
+  if (block_size > kMaxBlockSize) {
+    return kMaxBlockSize;
+  }
+  // Round down to a power of two (the FFT is radix-2).
+  std::size_t power = kMinBlockSize;
+  while (power * 2 <= block_size) {
+    power *= 2;
+  }
+  return power;
+}
 
 bool ResampleIr(IrData* ir, int target_rate) {
   if (ir == nullptr || target_rate <= 0 || ir->sample_rate <= 0) {
@@ -79,11 +99,12 @@ void NormalizeIr(IrData* ir) {
 
 }  // namespace
 
-bool BrirProcessor::configure(int sample_rate, int channels, const std::string& ir_path,
-                              double mix) {
+bool BrirProcessor::configure(int sample_rate, int channels, const std::string& ir_path, double mix,
+                              BrirMode mode, std::size_t block_size) {
   active_ = false;
-  mix_ = std::clamp(mix, 0.0, 1.0);
-  if (sample_rate <= 0 || channels <= 0 || ir_path.empty() || mix_ <= 0.0) {
+  mix_.store(std::clamp(mix, 0.0, 1.0), std::memory_order_relaxed);
+  if (sample_rate <= 0 || channels <= 0 || ir_path.empty() ||
+      mix_.load(std::memory_order_relaxed) <= 0.0) {
     return false;
   }
 
@@ -108,7 +129,21 @@ bool BrirProcessor::configure(int sample_rate, int channels, const std::string& 
   }
   NormalizeIr(&ir);
 
-  block_size_ = kBlockSize;
+  mode_ = mode == BrirMode::kAuto
+              ? (ir.frames <= kDirectMaxTaps ? BrirMode::kDirect : BrirMode::kPartitioned)
+              : mode;
+
+  if (mode_ == BrirMode::kDirect) {
+    direct_left_ = std::move(ir.left);
+    direct_right_ = std::move(ir.right);
+    history_left_.assign(direct_left_.size(), 0.0f);
+    history_right_.assign(direct_right_.size(), 0.0f);
+    history_position_ = 0;
+    active_ = true;
+    return true;
+  }
+
+  block_size_ = ClampBlockSize(block_size);
   input_position_ = 0;
   wet_read_position_ = 0;
   wet_available_ = 0;
@@ -123,8 +158,10 @@ bool BrirProcessor::configure(int sample_rate, int channels, const std::string& 
   left_convolver_.configure(ir.left.data(), ir.frames, block_size_);
   right_convolver_.configure(ir.right.data(), ir.frames, block_size_);
   if (!left_convolver_.valid() || !right_convolver_.valid()) {
-    left_convolver_ = PartitionedConvolver{};
-    right_convolver_ = PartitionedConvolver{};
+    // configure(nullptr, 0, 0) invalidates in place (the class holds
+    // atomics and is not copy-assignable).
+    left_convolver_.configure(nullptr, 0, 0);
+    right_convolver_.configure(nullptr, 0, 0);
     return false;
   }
 
@@ -133,6 +170,12 @@ bool BrirProcessor::configure(int sample_rate, int channels, const std::string& 
 }
 
 void BrirProcessor::reset() noexcept {
+  if (mode_ == BrirMode::kDirect) {
+    std::fill(history_left_.begin(), history_left_.end(), 0.0f);
+    std::fill(history_right_.begin(), history_right_.end(), 0.0f);
+    history_position_ = 0;
+    return;
+  }
   left_convolver_.reset();
   right_convolver_.reset();
   std::fill(input_left_.begin(), input_left_.end(), 0.0f);
@@ -148,11 +191,50 @@ void BrirProcessor::reset() noexcept {
 }
 
 void BrirProcessor::process(float* interleaved, int frames, int channels) noexcept {
-  if (!active_ || interleaved == nullptr || frames <= 0 || channels < 2 || block_size_ == 0) {
+  if (!active_ || interleaved == nullptr || frames <= 0 || channels < 2) {
     return;
   }
 
-  const double dry_gain = 1.0 - mix_;
+  const double mix = mix_.load(std::memory_order_relaxed);
+  const double dry_gain = 1.0 - mix;
+
+  if (mode_ == BrirMode::kDirect) {
+    const std::size_t length = direct_left_.size();
+    for (int frame = 0; frame < frames; ++frame) {
+      const std::size_t base = static_cast<std::size_t>(frame) * static_cast<std::size_t>(channels);
+      const float in_left = interleaved[base];
+      const float in_right = interleaved[base + 1];
+
+      // Overwrite the oldest slot with the newest input; the oldest index then
+      // advances by one.
+      history_left_[history_position_] = in_left;
+      history_right_[history_position_] = in_right;
+      history_position_ = (history_position_ + 1 == length) ? 0 : history_position_ + 1;
+
+      // Walk the history newest-first so ir[0] pairs with the current input:
+      // wet = sum(ir[k] * x(t-k)).
+      float wet_left = 0.0f;
+      float wet_right = 0.0f;
+      std::size_t k = 0;
+      for (std::size_t j = history_position_; j > 0; --j) {
+        const std::size_t index = j - 1;
+        wet_left += direct_left_[k] * history_left_[index];
+        wet_right += direct_right_[k] * history_right_[index];
+        ++k;
+      }
+      for (std::size_t j = length; j > history_position_; --j) {
+        const std::size_t index = j - 1;
+        wet_left += direct_left_[k] * history_left_[index];
+        wet_right += direct_right_[k] * history_right_[index];
+        ++k;
+      }
+
+      interleaved[base] = static_cast<float>(dry_gain * in_left + mix * wet_left);
+      interleaved[base + 1] = static_cast<float>(dry_gain * in_right + mix * wet_right);
+    }
+    return;
+  }
+
   for (int frame = 0; frame < frames; ++frame) {
     const std::size_t base = static_cast<std::size_t>(frame) * static_cast<std::size_t>(channels);
     const float dry_left = interleaved[base];
@@ -187,8 +269,8 @@ void BrirProcessor::process(float* interleaved, int frames, int channels) noexce
       wet_available_ = block_size_;
     }
 
-    interleaved[base] = static_cast<float>(dry_gain * delayed_left + mix_ * wet_left);
-    interleaved[base + 1] = static_cast<float>(dry_gain * delayed_right + mix_ * wet_right);
+    interleaved[base] = static_cast<float>(dry_gain * delayed_left + mix * wet_left);
+    interleaved[base + 1] = static_cast<float>(dry_gain * delayed_right + mix * wet_right);
   }
 }
 

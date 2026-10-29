@@ -3,11 +3,11 @@
 
 #pragma once
 
+#include <oboe/Oboe.h>
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
-
-#include <oboe/Oboe.h>
 
 #include "dsp/AudioRingBuffer.h"
 
@@ -67,11 +67,9 @@ class OboeOutput final : public oboe::AudioStreamDataCallback,
   [[nodiscard]] int32_t xrun_count() const noexcept;
   [[nodiscard]] int64_t underrun_count() const noexcept;
 
-  oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream,
-                                        void* audio_data,
+  oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream, void* audio_data,
                                         int32_t num_frames) override;
-  void onErrorAfterClose(oboe::AudioStream* stream,
-                         oboe::Result error) override;
+  void onErrorAfterClose(oboe::AudioStream* stream, oboe::Result error) override;
 
  private:
   std::shared_ptr<oboe::AudioStream> stream_;

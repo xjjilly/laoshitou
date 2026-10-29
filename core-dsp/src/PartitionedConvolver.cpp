@@ -21,12 +21,14 @@ void PartitionedConvolver::configure(const float* ir, std::size_t ir_length,
   fft_size_ = 0;
   partition_count_ = 0;
   history_position_ = 0;
-  ir_spectra_.clear();
+  ir_spectra_[0].clear();
+  ir_spectra_[1].clear();
   input_history_.clear();
   accumulator_.clear();
   time_buffer_.clear();
   overlap_.clear();
   fft_.reset();
+  ir_active_.store(0, std::memory_order_relaxed);
 
   if (ir == nullptr || ir_length == 0 || block_size < 16 || !IsPowerOfTwo(block_size)) {
     return;
@@ -41,13 +43,20 @@ void PartitionedConvolver::configure(const float* ir, std::size_t ir_length,
   }
 
   partition_count_ = (ir_length + block_size_ - 1) / block_size_;
-  ir_spectra_.resize(partition_count_);
+  ir_spectra_[0].resize(partition_count_);
+  ir_spectra_[1].resize(partition_count_);
   input_history_.assign(partition_count_, std::vector<std::complex<float>>(
                                               fft_size_, std::complex<float>(0.0f, 0.0f)));
   accumulator_.assign(fft_size_, std::complex<float>(0.0f, 0.0f));
   time_buffer_.assign(fft_size_, std::complex<float>(0.0f, 0.0f));
   overlap_.assign(block_size_, 0.0f);
 
+  FillSpectra(ir, ir_length, 0);
+  history_position_ = 0;
+  valid_ = true;
+}
+
+void PartitionedConvolver::FillSpectra(const float* ir, std::size_t ir_length, int set) {
   for (std::size_t partition = 0; partition < partition_count_; ++partition) {
     std::fill(time_buffer_.begin(), time_buffer_.end(), std::complex<float>(0.0f, 0.0f));
     const std::size_t offset = partition * block_size_;
@@ -56,11 +65,17 @@ void PartitionedConvolver::configure(const float* ir, std::size_t ir_length,
       time_buffer_[i] = std::complex<float>(ir[offset + i], 0.0f);
     }
     fft_->transform(time_buffer_.data(), false);
-    ir_spectra_[partition] = time_buffer_;
+    ir_spectra_[set][partition] = time_buffer_;
   }
+}
 
-  history_position_ = 0;
-  valid_ = true;
+void PartitionedConvolver::set_ir(const float* ir) noexcept {
+  if (!valid_ || ir == nullptr) {
+    return;
+  }
+  const int inactive = 1 - ir_active_.load(std::memory_order_relaxed);
+  FillSpectra(ir, block_size_ * partition_count_, inactive);
+  ir_active_.store(inactive, std::memory_order_release);
 }
 
 void PartitionedConvolver::reset() noexcept {
@@ -94,9 +109,10 @@ void PartitionedConvolver::process_block(const float* input, float* output) noex
   input_history_[history_position_] = time_buffer_;
 
   std::fill(accumulator_.begin(), accumulator_.end(), std::complex<float>(0.0f, 0.0f));
+  const auto& spectra = ir_spectra_[ir_active_.load(std::memory_order_acquire)];
   std::size_t index = history_position_;
   for (std::size_t partition = 0; partition < partition_count_; ++partition) {
-    const auto& spectrum = ir_spectra_[partition];
+    const auto& spectrum = spectra[partition];
     const auto& history = input_history_[index];
     for (std::size_t bin = 0; bin < fft_size_; ++bin) {
       accumulator_[bin] += history[bin] * spectrum[bin];

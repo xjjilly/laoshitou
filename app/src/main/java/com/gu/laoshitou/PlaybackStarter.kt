@@ -4,6 +4,8 @@
 package com.gu.laoshitou
 
 import android.content.Context
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
@@ -60,27 +62,45 @@ fun startPlayback(
     brirPath: String,
     brirEnabled: Boolean,
     brirMix: Double,
+    eqLinearPhase: Boolean,
+    multibandEnabled: Boolean,
+    multibandLowHz: Double,
+    multibandHighHz: Double,
+    multibandThresholdDb: Double,
 ): PlaybackStartResult {
     val audioManager = context.getSystemService(AudioManager::class.java)
     val nativeRate = audioManager
         ?.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
         ?.toIntOrNull()
         ?: 0
-    val supportedRates = audioManager
+    val outputDevices = audioManager
         ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        ?.flatMap { it.sampleRates.toList() }
-        ?.distinct()
-        ?.sorted()
-        ?.toIntArray()
-        ?: intArrayOf()
-
-    val usbDetected = audioManager
-        ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        ?.any { device ->
-            device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-                device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+        ?: emptyArray()
+    // MIUI 的 AudioManager 常漏报 USB 音频设备（系统路由已在 USB 上但枚举
+    // 不到），用 UsbManager 枚举物理 USB 音频接口作为补充检测。
+    val usbAudioPresent = context.getSystemService(UsbManager::class.java)
+        ?.deviceList?.values?.any { usbDevice ->
+            (0 until usbDevice.interfaceCount).any { index ->
+                usbDevice.getInterface(index).interfaceClass == UsbConstants.USB_CLASS_AUDIO
+            }
         }
         ?: false
+    val usbDetected = outputDevices.any { device ->
+        device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+            device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+    } || usbAudioPresent
+
+    // USB 音频存在时把通用 DAC 采样率并入规划集合：漏报的设备没有
+    // sampleRates，缺了它们采样率规划会退化到内置输出的 48k 共享。
+    val standardUsbRates = intArrayOf(44100, 48000, 88200, 96000, 176400, 192000)
+    val supportedRates = (
+        outputDevices
+            .flatMap { it.sampleRates.toList() } +
+            if (usbAudioPresent) standardUsbRates.toList() else emptyList()
+        )
+        .distinct()
+        .sorted()
+        .toIntArray()
 
     val started = runCatching {
         NativeBridge.startFile(
@@ -106,6 +126,11 @@ fun startPlayback(
             brirPath,
             brirEnabled,
             brirMix,
+            eqLinearPhase,
+            multibandEnabled,
+            multibandLowHz,
+            multibandHighHz,
+            multibandThresholdDb,
         )
     }.getOrElse { error ->
         return PlaybackStartResult(false, "播放失败：${error.message}")
@@ -145,6 +170,20 @@ fun startPlayback(
             } else {
                 "关闭"
             },
+        )
+        appendLine(
+            "线性相位 FIR：" + yesNo(eqLinearPhase) +
+                if (NativeBridge.playbackFirDegraded()) "（>96kHz 已自动降级）" else "",
+        )
+        appendLine(
+            "多段压缩：" + yesNo(multibandEnabled) +
+                if (multibandEnabled) {
+                    "（低/高分频 " + multibandLowHz.toInt() + "/" + multibandHighHz.toInt() +
+                        " Hz，阈值 " +
+                        String.format(java.util.Locale.US, "%.0f", multibandThresholdDb) + " dB）"
+                } else {
+                    ""
+                },
         )
         appendLine("源采样率：${NativeBridge.playbackSourceRate()} Hz")
         appendLine("目标采样率：${NativeBridge.playbackTargetRate()} Hz")

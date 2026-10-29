@@ -29,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gu.laoshitou.R
@@ -147,13 +149,41 @@ fun AboutScreen(
                 }
 
                 HorizontalDivider(color = HifiMuted.copy(alpha = 0.25f))
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(20.dp))
                 Text(
-                    "感谢使用。",
+                    "支持开发者",
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = HifiAmber,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "本软件免费开源。如果它帮到了你，可以自愿请作者喝杯咖啡；" +
+                        "不打赏也完全不影响任何功能。",
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodySmall,
                     color = HifiMuted,
+                )
+                Spacer(Modifier.height(10.dp))
+                Image(
+                    painter = painterResource(R.drawable.reward_qr),
+                    contentDescription = "微信赞赏码",
+                    modifier = Modifier
+                        .size(220.dp)
+                        .align(Alignment.CenterHorizontally),
+                    contentScale = ContentScale.Fit,
+                )
+                Spacer(Modifier.height(20.dp))
+                HorizontalDivider(color = HifiMuted.copy(alpha = 0.15f))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    stringResource(R.string.free_software_notice),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HifiMuted.copy(alpha = 0.55f),
                 )
                 Spacer(Modifier.height(24.dp))
             }

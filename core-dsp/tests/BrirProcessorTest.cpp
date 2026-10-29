@@ -76,8 +76,9 @@ std::string MakeIrFile() {
 void TestImpulseAlignedWet() {
   const std::string path = MakeIrFile();
   dsp::BrirProcessor processor;
-  CHECK(processor.configure(48000, 2, path, 1.0));
+  CHECK(processor.configure(48000, 2, path, 1.0, dsp::BrirMode::kPartitioned, 2048));
   CHECK(processor.active());
+  CHECK(processor.mode() == dsp::BrirMode::kPartitioned);
   CHECK(processor.latency_frames() == 2048U);
 
   constexpr int kFrames = 4096;
@@ -106,7 +107,7 @@ void TestImpulseAlignedWet() {
 void TestDryWetMix() {
   const std::string path = MakeIrFile();
   dsp::BrirProcessor processor;
-  CHECK(processor.configure(48000, 2, path, 0.5));
+  CHECK(processor.configure(48000, 2, path, 0.5, dsp::BrirMode::kPartitioned, 2048));
 
   constexpr int kFrames = 4096;
   std::vector<float> samples(kFrames * 2, 0.0f);
@@ -126,12 +127,103 @@ void TestMissingIr() {
   CHECK(!processor.active());
 }
 
+void TestDirectImpulse() {
+  const std::string path = MakeIrFile();
+  dsp::BrirProcessor processor;
+  CHECK(processor.configure(48000, 2, path, 1.0, dsp::BrirMode::kDirect));
+  CHECK(processor.active());
+  CHECK(processor.mode() == dsp::BrirMode::kDirect);
+  CHECK(processor.latency_frames() == 0U);
+
+  // Direct mode has no block latency: the wet IR starts at frame 0.
+  constexpr int kFrames = 64;
+  std::vector<float> samples(kFrames * 2, 0.0f);
+  samples[0] = 1.0f;
+  samples[1] = 1.0f;
+  processor.process(samples.data(), kFrames, 2);
+
+  // Peak normalization scales the 0.5/0.25 stereo IR by 0.9/0.5 = 1.8.
+  CHECK(std::abs(samples[0] - 0.9f) < 1.0e-3f);
+  CHECK(std::abs(samples[1] - 0.45f) < 1.0e-3f);
+  CHECK(std::abs(samples[2] - 0.18f) < 1.0e-3f);
+  CHECK(std::abs(samples[3] + 0.09f) < 1.0e-3f);
+  for (int i = 4; i < kFrames * 2; ++i) {
+    CHECK(std::abs(samples[i]) < 1.0e-5f);
+  }
+  std::remove(path.c_str());
+}
+
+void TestAutoModeSelectsDirect() {
+  const std::string path = MakeIrFile();
+  dsp::BrirProcessor processor;
+  // Default kAuto: the 32-sample IR is below the direct-mode threshold.
+  CHECK(processor.configure(48000, 2, path, 1.0));
+  CHECK(processor.mode() == dsp::BrirMode::kDirect);
+  CHECK(processor.latency_frames() == 0U);
+  std::remove(path.c_str());
+}
+
+void TestBlockSizeClamped() {
+  const std::string path = MakeIrFile();
+  dsp::BrirProcessor processor;
+  // 100 is not a power of two: rounds down to 64.
+  CHECK(processor.configure(48000, 2, path, 1.0, dsp::BrirMode::kPartitioned, 100));
+  CHECK(processor.latency_frames() == 64U);
+  std::remove(path.c_str());
+}
+
+void TestDirectMatchesPartitioned() {
+  // A 96-frame stereo IR with deterministic pseudo-random content, long enough
+  // to span two 64-frame partitions.
+  std::vector<float> ir(96 * 2, 0.0f);
+  std::uint32_t state = 12345u;
+  for (float& sample : ir) {
+    state = state * 1664525u + 1013904223u;
+    sample = static_cast<float>((state >> 16) & 0xFFFF) / 32768.0f - 1.0f;
+  }
+  const std::string path = "brir_processor_test_eq.wav";
+  WritePcm16Wav(path, 48000, 2, ir);
+
+  dsp::BrirProcessor direct;
+  CHECK(direct.configure(48000, 2, path, 1.0, dsp::BrirMode::kDirect));
+  dsp::BrirProcessor partitioned;
+  CHECK(partitioned.configure(48000, 2, path, 1.0, dsp::BrirMode::kPartitioned, 64));
+  CHECK(partitioned.latency_frames() == 64U);
+
+  constexpr int kFrames = 512;
+  std::vector<float> direct_samples(kFrames * 2, 0.0f);
+  std::vector<float> partitioned_samples(kFrames * 2, 0.0f);
+  for (int i = 0; i < kFrames; ++i) {
+    // An impulse train exercises every tap of the IR.
+    const float value = (i % 7 == 0) ? 1.0f : 0.0f;
+    direct_samples[i * 2] = value;
+    direct_samples[i * 2 + 1] = -value;
+  }
+  partitioned_samples = direct_samples;
+  direct.process(direct_samples.data(), kFrames, 2);
+  partitioned.process(partitioned_samples.data(), kFrames, 2);
+
+  // The partitioned output equals the direct output delayed by one block.
+  constexpr int kLatency = 64;
+  constexpr float kTolerance = 2.0e-3f;
+  for (int t = kLatency; t < kFrames; ++t) {
+    CHECK(std::abs(direct_samples[(t - kLatency) * 2] - partitioned_samples[t * 2]) < kTolerance);
+    CHECK(std::abs(direct_samples[(t - kLatency) * 2 + 1] - partitioned_samples[t * 2 + 1]) <
+          kTolerance);
+  }
+  std::remove(path.c_str());
+}
+
 }  // namespace
 
 int main() {
   TestImpulseAlignedWet();
   TestDryWetMix();
   TestMissingIr();
+  TestDirectImpulse();
+  TestAutoModeSelectsDirect();
+  TestBlockSizeClamped();
+  TestDirectMatchesPartitioned();
 
   if (g_failures == 0) {
     std::cout << "ALL TESTS PASSED\n";

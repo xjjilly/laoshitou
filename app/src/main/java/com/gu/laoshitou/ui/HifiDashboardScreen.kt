@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,11 +34,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -123,7 +127,7 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                         DspRow("交叉馈送", yn(state.crossfeedActive))
                         DspRow("限制器", yn(state.limiterActive))
                         DspRow("BRIR", yn(state.brirActive))
-                        DspRow("独占模式", yn(state.exclusive))
+                        DspRow("独占模式", if (state.playing) yn(state.exclusive) else "—")
                         DspRow("欠载", "${state.underruns}")
                         DspRow(
                             "采样覆盖",
@@ -336,7 +340,7 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
             color = HifiAmber,
         )
         Text(
-            "拖动频点调整增益；实线为 EQ 曲线，虚线含 Preamp；应用后下次播放生效。",
+            "拖动频点调整增益；实线为 EQ 曲线，虚线含 Preamp；播放中应用会实时生效。",
             style = MaterialTheme.typography.bodySmall,
             color = HifiMuted,
         )
@@ -455,23 +459,89 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
                     center = Offset(x, y),
                 )
             }
+
+            // Exact value of the selected band, floating next to its dot.
+            if (selected in EqEditorFrequencies.indices) {
+                val frequency = EqEditorFrequencies[selected]
+                val gain = gains.getOrElse(selected) { 0f }
+                val cx = xAt(frequency)
+                val cy = yAt(gain.toDouble())
+                val frequencyText = if (frequency >= 1000.0) {
+                    String.format(Locale.US, "%.1f kHz", frequency / 1000.0)
+                } else {
+                    String.format(Locale.US, "%.0f Hz", frequency)
+                }
+                val label = frequencyText + String.format(Locale.US, "  %+.1f dB", gain)
+                val paint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    textSize = 11.dp.toPx()
+                    color = android.graphics.Color.WHITE
+                }
+                val pad = 6.dp.toPx()
+                val bubbleWidth = paint.measureText(label) + pad * 2
+                val bubbleHeight = 18.dp.toPx()
+                val bubbleX = (cx - bubbleWidth / 2)
+                    .coerceIn(left, (right - bubbleWidth).coerceAtLeast(left))
+                val bubbleY = (cy - bubbleHeight - 6.dp.toPx()).coerceAtLeast(top)
+                drawRoundRect(
+                    color = Color(0xCC1E242B),
+                    topLeft = Offset(bubbleX, bubbleY),
+                    size = Size(bubbleWidth, bubbleHeight),
+                    cornerRadius = CornerRadius(4.dp.toPx()),
+                )
+                drawContext.canvas.nativeCanvas.drawText(
+                    label,
+                    bubbleX + pad,
+                    bubbleY + bubbleHeight * 0.72f,
+                    paint,
+                )
+            }
         }
 
         Spacer(Modifier.height(4.dp))
-        if (selected in EqEditorFrequencies.indices) {
-            val gain = gains.getOrElse(selected) { 0f }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = {
+                    if (selected in EqEditorFrequencies.indices) {
+                        actions.setEqEditorGain(
+                            selected,
+                            (gains.getOrElse(selected) { 0f } - 0.5f).coerceIn(-18f, 18f),
+                        )
+                    }
+                },
+                enabled = selected in EqEditorFrequencies.indices,
+            ) {
+                Text("−")
+            }
             Text(
-                "${EqEditorFrequencies[selected].toInt()} Hz：" +
-                    String.format(Locale.US, "%+.1f", gain) + " dB",
+                if (selected in EqEditorFrequencies.indices) {
+                    val gain = gains.getOrElse(selected) { 0f }
+                    "${EqEditorFrequencies[selected].toInt()} Hz：" +
+                        String.format(Locale.US, "%+.1f", gain) + " dB"
+                } else {
+                    "点选或拖动曲线上的频点"
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = HifiCyan,
+                color = if (selected in EqEditorFrequencies.indices) HifiCyan else HifiMuted,
+                modifier = Modifier.weight(1f),
             )
-        } else {
-            Text(
-                "点选或拖动曲线上的频点",
-                style = MaterialTheme.typography.bodySmall,
-                color = HifiMuted,
-            )
+            OutlinedButton(
+                onClick = {
+                    if (selected in EqEditorFrequencies.indices) {
+                        actions.setEqEditorGain(
+                            selected,
+                            (gains.getOrElse(selected) { 0f } + 0.5f).coerceIn(-18f, 18f),
+                        )
+                    }
+                },
+                enabled = selected in EqEditorFrequencies.indices,
+            ) {
+                Text("+")
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -504,12 +574,48 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
             OutlinedButton(onClick = actions.resetEqEditor) {
                 Text("重置")
             }
-            Button(
-                onClick = actions.applyEqEditor,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("应用（下次播放）")
+            TextButton(onClick = actions.saveEqEditor) {
+                Text("保存")
             }
+        }
+        Spacer(Modifier.height(4.dp))
+        Button(
+            onClick = actions.applyEqEditor,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (state.playing) "应用（实时生效）" else "应用（下次播放生效）")
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "线性相位 FIR",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HifiCyan,
+                )
+                Text(
+                    if (state.playing) {
+                        when {
+                            state.firDegraded -> "已降级为普通模式（>96kHz）"
+                            state.linearPhaseActive -> "运行中（约 35ms 延迟）"
+                            else -> "未生效"
+                        }
+                    } else {
+                        "约 35ms 延迟；下次播放生效"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HifiMuted,
+                )
+            }
+            Switch(
+                checked = state.eqLinearPhase,
+                onCheckedChange = actions.setEqLinearPhase,
+                enabled = !state.playing,
+            )
         }
     }
 }

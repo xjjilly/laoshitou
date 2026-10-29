@@ -18,9 +18,7 @@ constexpr std::array<int, 3> k48Ladder{48000, 96000, 192000};
   return std::find(rates.begin(), rates.end(), rate) != rates.end();
 }
 
-[[nodiscard]] int AbsDiff(int a, int b) noexcept {
-  return a >= b ? a - b : b - a;
-}
+[[nodiscard]] int AbsDiff(int a, int b) noexcept { return a >= b ? a - b : b - a; }
 
 [[nodiscard]] int MaxRate(const std::vector<int>& rates) noexcept {
   int max_rate = 0;
@@ -82,8 +80,7 @@ bool IsIntegerRatio(int a, int b) noexcept {
   return (a % b == 0) || (b % a == 0);
 }
 
-RatePlan MakeRatePlan(int source_rate, OutputMode mode,
-                      const DeviceRates& device) noexcept {
+RatePlan MakeRatePlan(int source_rate, OutputMode mode, const DeviceRates& device) noexcept {
   RatePlan plan;
   plan.source_rate = source_rate;
   plan.family = ClassifyRateFamily(source_rate);
@@ -105,15 +102,11 @@ RatePlan MakeRatePlan(int source_rate, OutputMode mode,
 
   const auto finish = [&](int target) {
     plan.target_rate = target;
-    plan.needs_resample =
-        source_rate > 0 && target > 0 && target != source_rate;
-    plan.cross_family_fallback =
-        plan.family != RateFamily::kUnknown && target > 0 &&
-        ClassifyRateFamily(target) != plan.family;
-    plan.non_integer_ratio =
-        plan.needs_resample && !IsIntegerRatio(source_rate, target);
-    plan.device_limited =
-        source_rate > 0 && target > 0 && target < source_rate;
+    plan.needs_resample = source_rate > 0 && target > 0 && target != source_rate;
+    plan.cross_family_fallback = plan.family != RateFamily::kUnknown && target > 0 &&
+                                 ClassifyRateFamily(target) != plan.family;
+    plan.non_integer_ratio = plan.needs_resample && !IsIntegerRatio(source_rate, target);
+    plan.device_limited = source_rate > 0 && target > 0 && target < source_rate;
   };
 
   if (mode == OutputMode::kDirect) {
@@ -121,8 +114,7 @@ RatePlan MakeRatePlan(int source_rate, OutputMode mode,
     if (source_rate <= 0) {
       target = device.native_rate;
     } else if (!is_supported(source_rate)) {
-      if (device.native_rate > 0 &&
-          ClassifyRateFamily(device.native_rate) == plan.family) {
+      if (device.native_rate > 0 && ClassifyRateFamily(device.native_rate) == plan.family) {
         target = device.native_rate;
       } else if (have_supported) {
         target = ClosestRate(supported, source_rate);

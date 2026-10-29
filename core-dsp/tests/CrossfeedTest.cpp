@@ -1,47 +1,43 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 老石头 contributors
 
-#include "dsp/Crossfeed.h"
-
 #include <cmath>
 #include <cstddef>
 #include <iostream>
 #include <vector>
 
+#include "dsp/Crossfeed.h"
+
 namespace {
 
 int g_failures = 0;
 
-#define CHECK(condition)                                                     \
-  do {                                                                       \
-    if (!(condition)) {                                                      \
-      std::cerr << __FILE__ << ":" << __LINE__                               \
-                << " CHECK failed: " #condition << "\n";                     \
-      ++g_failures;                                                          \
-    }                                                                        \
+#define CHECK(condition)                                                                \
+  do {                                                                                  \
+    if (!(condition)) {                                                                 \
+      std::cerr << __FILE__ << ":" << __LINE__ << " CHECK failed: " #condition << "\n"; \
+      ++g_failures;                                                                     \
+    }                                                                                   \
   } while (false)
 
 constexpr double kPi = 3.14159265358979323846264338327950288;
 
-std::vector<float> MakeLeftOnlySine(std::size_t frames, int sample_rate,
-                                    double frequency, float amplitude) {
+std::vector<float> MakeLeftOnlySine(std::size_t frames, int sample_rate, double frequency,
+                                    float amplitude) {
   std::vector<float> result(frames * 2, 0.0f);
   for (std::size_t i = 0; i < frames; ++i) {
-    result[i * 2] = amplitude * static_cast<float>(
-                                    std::sin(2.0 * kPi * frequency *
-                                             static_cast<double>(i) /
-                                             static_cast<double>(sample_rate)));
+    result[i * 2] =
+        amplitude * static_cast<float>(std::sin(2.0 * kPi * frequency * static_cast<double>(i) /
+                                                static_cast<double>(sample_rate)));
   }
   return result;
 }
 
-double RmsChannel(const std::vector<float>& samples, std::size_t start_frame,
-                  int channel) {
+double RmsChannel(const std::vector<float>& samples, std::size_t start_frame, int channel) {
   const std::size_t start = start_frame * 2;
   double sum = 0.0;
   std::size_t count = 0;
-  for (std::size_t i = start + static_cast<std::size_t>(channel);
-       i < samples.size(); i += 2) {
+  for (std::size_t i = start + static_cast<std::size_t>(channel); i < samples.size(); i += 2) {
     sum += static_cast<double>(samples[i]) * static_cast<double>(samples[i]);
     ++count;
   }
