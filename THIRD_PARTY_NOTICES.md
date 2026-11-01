@@ -30,6 +30,7 @@ distribution.
 | Component | Version / pin | License | Purpose |
 |---|---|---|---|
 | Oboe | 1.11.0 (`com.google.oboe:oboe`) | Apache-2.0 | Low-latency audio output |
+| CyberLink for Java | 2.2.0 (`org.cybergarage.upnp:core`, `std`) | BSD-3-Clause | UPnP/DLNA protocol stack (SSDP/SOAP/GENA/HTTP) |
 | libsamplerate | `0844c208f683527c08ea8a80acc13b398aa9c8bf` (0.2.x) | BSD-2-Clause | Sample-rate conversion |
 | libbs2b | 3.1.0 | MIT | Crossfeed |
 | rigtorp/SPSCQueue | `59a6a938513ea5004817383711ed35d32385d3ee` | MIT | Lock-free command queue |
@@ -44,6 +45,7 @@ License texts:
 
 - Oboe — `third_party/licenses/Oboe-LICENSE.txt`,
   `third_party/licenses/Oboe-NOTICE.txt`.
+- CyberLink for Java — `third_party/licenses/CyberLink-LICENSE.txt`.
 - AutoEQ — `third_party/licenses/AutoEQ-LICENSE.txt`.
 - libsamplerate — `third_party/libsamplerate/COPYING`.
 - bs2b — `third_party/bs2b/COPYING`.
@@ -51,6 +53,21 @@ License texts:
 - PortAudio ring buffer — `third_party/portaudio/LICENSE.txt`.
 - FFmpeg — `third_party/ffmpeg/COPYING.LGPLv2.1`,
   `third_party/ffmpeg/COPYING.LGPLv3`.
+
+## CyberLink for Java 2.2.0
+
+- License: BSD-3-Clause; copyright (c) 2003-2010 Satoshi Konno. Full text in
+  `third_party/licenses/CyberLink-LICENSE.txt`.
+- Source: <https://github.com/cybergarage/cybergarage-upnp>.
+- Artifacts: `org.cybergarage.upnp:core:2.2.0`,
+  `org.cybergarage.upnp:std:2.2.0` (Maven Central).
+- SHA-256 of the Maven Central jars:
+  `core-2.2.0.jar` `1183e3bb8aba9913b3ccedd4e902a011ef9f6fbcad91059eb334ee5a181fbb71`,
+  `std-2.2.0.jar` `26049283ee1170cf7dc10716951066d0e1aa5d542a5ba949043489a3c601fe58`.
+- The `std` media server/renderer classes are protocol skeletons. Android
+  playback (`MediaPlayer` + `VettedMediaDataSource`), Range/token media
+  endpoint, URL guard and DMR state machines are implemented by 老石头 and
+  remain under GPLv3.
 
 ## Test IR / HRTF / BRIR assets
 

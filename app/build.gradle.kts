@@ -22,8 +22,8 @@ android {
         applicationId = "com.gu.laoshitou"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2"
+        versionCode = 5
+        versionName = "1.3"
 
         ndk {
             // FFmpeg is currently built for arm64-v8a. Add x86_64 here after
@@ -101,6 +101,14 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("com.google.oboe:oboe:1.11.0")
+
+    // DLNA/UPnP protocol stack. jupnp is CDDL-1.0 only and therefore not
+    // GPLv3-compatible; CyberLink for Java is BSD-3-Clause. See
+    // docs/DLNA_UPNP_PLAN.md §13 for the license audit.
+    implementation("org.cybergarage.upnp:core:2.2.0")
+    implementation("org.cybergarage.upnp:std:2.2.0")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -80,6 +80,9 @@ fun ImmersivePlayerScreen(state: PlayerState, actions: PlayerActions) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
+                    TextButton(onClick = { actions.setDlnaOpen(true) }) {
+                        Text("DLNA")
+                    }
                     TextButton(onClick = { actions.setAboutOpen(true) }) {
                         Text("关于")
                     }

@@ -17,14 +17,20 @@ extern "C" {
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <utility>
 
+#include <libavutil/mem.h>
+
+#include "audio/MediaSource.h"
 #include "dsp/DffReader.h"
 
 namespace audio {
 namespace {
+
+constexpr int kAvioBufferSize = 64 * 1024;
 
 std::string AvErrorString(int error) {
   char buffer[AV_ERROR_MAX_STRING_SIZE] = {};
@@ -51,11 +57,63 @@ bool FfmpegDecoder::open(const std::string& path) {
     close();
     return false;
   }
+  if (!finish_open()) {
+    close();
+    return false;
+  }
+  return true;
+}
 
-  result = avformat_find_stream_info(format_, nullptr);
+bool FfmpegDecoder::open_source(std::unique_ptr<MediaSource> source) {
+  close();
+  if (source == nullptr) {
+    error_ = "no media source";
+    return false;
+  }
+  source_ = std::move(source);
+
+  format_ = avformat_alloc_context();
+  if (format_ == nullptr) {
+    error_ = "avformat_alloc_context failed";
+    close();
+    return false;
+  }
+  avio_state_.source = source_.get();
+  avio_state_.position = 0;
+  auto* buffer = static_cast<std::uint8_t*>(av_malloc(kAvioBufferSize));
+  if (buffer == nullptr) {
+    error_ = "av_malloc failed";
+    close();
+    return false;
+  }
+  avio_ = avio_alloc_context(buffer, kAvioBufferSize, 0, &avio_state_, &read_packet, nullptr,
+                             &seek);
+  if (avio_ == nullptr) {
+    av_free(buffer);
+    error_ = "avio_alloc_context failed";
+    close();
+    return false;
+  }
+  format_->pb = avio_;
+  format_->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+  const int result = avformat_open_input(&format_, "", nullptr, nullptr);
   if (result < 0) {
     set_error(result);
     close();
+    return false;
+  }
+  if (!finish_open()) {
+    close();
+    return false;
+  }
+  return true;
+}
+
+bool FfmpegDecoder::finish_open() {
+  int result = avformat_find_stream_info(format_, nullptr);
+  if (result < 0) {
+    set_error(result);
     return false;
   }
 
@@ -63,28 +121,24 @@ bool FfmpegDecoder::open(const std::string& path) {
   stream_index_ = av_find_best_stream(format_, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
   if (stream_index_ < 0 || codec == nullptr) {
     error_ = "no audio stream";
-    close();
     return false;
   }
 
   codec_ = avcodec_alloc_context3(codec);
   if (codec_ == nullptr) {
     error_ = "avcodec_alloc_context3 failed";
-    close();
     return false;
   }
 
   result = avcodec_parameters_to_context(codec_, format_->streams[stream_index_]->codecpar);
   if (result < 0) {
     set_error(result);
-    close();
     return false;
   }
 
   result = avcodec_open2(codec_, codec, nullptr);
   if (result < 0) {
     set_error(result);
-    close();
     return false;
   }
 
@@ -101,10 +155,10 @@ bool FfmpegDecoder::open(const std::string& path) {
   frame_ = av_frame_alloc();
   if (packet_ == nullptr || frame_ == nullptr) {
     error_ = "failed to allocate packet/frame";
-    close();
     return false;
   }
-
+  position_ms_.store(0, std::memory_order_relaxed);
+  decoded_frames_ = 0;
   return true;
 }
 
@@ -198,7 +252,16 @@ void FfmpegDecoder::close() {
   if (format_ != nullptr) {
     avformat_close_input(&format_);
   }
+  if (avio_ != nullptr) {
+    av_freep(&avio_->buffer);
+    avio_context_free(&avio_);
+    avio_ = nullptr;
+  }
+  avio_state_ = {};
+  source_.reset();
 
+  position_ms_.store(0, std::memory_order_relaxed);
+  decoded_frames_ = 0;
   stream_index_ = -1;
   sample_rate_ = 0;
   source_channels_ = 0;
@@ -227,13 +290,102 @@ std::int64_t FfmpegDecoder::duration_ms() const noexcept { return duration_ms_; 
 
 const std::string& FfmpegDecoder::last_error() const noexcept { return error_; }
 
+std::int64_t FfmpegDecoder::position_ms() const noexcept {
+  return position_ms_.load(std::memory_order_relaxed);
+}
+
+bool FfmpegDecoder::seek_ms(std::int64_t position_ms) {
+  if (!is_open() || dsd_mode_ || format_ == nullptr || stream_index_ < 0) {
+    return false;
+  }
+  const std::int64_t target = std::max<std::int64_t>(position_ms, 0);
+  const AVRational time_base = format_->streams[stream_index_]->time_base;
+  const std::int64_t timestamp = av_rescale_q(target, AVRational{1, 1000}, time_base);
+  const int result = av_seek_frame(format_, stream_index_, timestamp, AVSEEK_FLAG_BACKWARD);
+  if (result < 0) {
+    set_error(result);
+    return false;
+  }
+  // Do NOT call avformat_flush() here: it can reset the custom AVIO position
+  // to the start, turning the seek into a restart from 0. av_seek_frame()
+  // already discards the demuxer's buffered data.
+  avcodec_flush_buffers(codec_);
+  if (swr_ != nullptr) {
+    swr_free(&swr_);
+  }
+  demux_eof_ = false;
+  drain_sent_ = false;
+  position_ms_.store(target, std::memory_order_relaxed);
+  decoded_frames_ = sample_rate_ > 0 ? target * sample_rate_ / 1000 : 0;
+  error_.clear();
+  return true;
+}
+
+int FfmpegDecoder::read_packet(void* opaque, std::uint8_t* buffer, int size) {
+  auto* state = static_cast<AvioState*>(opaque);
+  if (state == nullptr || state->source == nullptr || buffer == nullptr || size <= 0) {
+    return AVERROR_EOF;
+  }
+  const int read = state->source->read_at(state->position, buffer, size);
+  if (read < 0) {
+    return AVERROR(EIO);
+  }
+  if (read == 0) {
+    return AVERROR_EOF;
+  }
+  state->position += read;
+  return read;
+}
+
+std::int64_t FfmpegDecoder::seek(void* opaque, std::int64_t offset, int whence) {
+  auto* state = static_cast<AvioState*>(opaque);
+  if (state == nullptr || state->source == nullptr) {
+    return AVERROR(EIO);
+  }
+  if (whence == AVSEEK_SIZE) {
+    return state->source->size();
+  }
+  std::int64_t target = 0;
+  switch (whence) {
+    case SEEK_SET:
+      target = offset;
+      break;
+    case SEEK_CUR:
+      target = state->position + offset;
+      break;
+    case SEEK_END: {
+      const std::int64_t total = state->source->size();
+      if (total < 0) {
+        return AVERROR(EIO);
+      }
+      target = total + offset;
+      break;
+    }
+    default:
+      return AVERROR(EINVAL);
+  }
+  if (target < 0) {
+    return AVERROR(EINVAL);
+  }
+  state->position = target;
+  return target;
+}
+
 bool FfmpegDecoder::read(std::vector<float>* out, int* frames_read) {
   if (out == nullptr || frames_read == nullptr || !is_open()) {
     return false;
   }
 
   if (dsd_mode_) {
-    return read_dff(out, frames_read);
+    const bool ok = read_dff(out, frames_read);
+    if (ok && frames_read != nullptr && *frames_read > 0) {
+      decoded_frames_ += *frames_read;
+      if (sample_rate_ > 0) {
+        position_ms_.store(decoded_frames_ * 1000 / sample_rate_,
+                           std::memory_order_relaxed);
+      }
+    }
+    return ok;
   }
 
   out->clear();
@@ -245,6 +397,16 @@ bool FfmpegDecoder::read(std::vector<float>* out, int* frames_read) {
       if (!convert_current_frame()) {
         return false;
       }
+      const std::int64_t pts = frame_->best_effort_timestamp;
+      if (pts != AV_NOPTS_VALUE && format_ != nullptr && stream_index_ >= 0) {
+        position_ms_.store(
+            av_rescale_q(pts, format_->streams[stream_index_]->time_base, AVRational{1, 1000}),
+            std::memory_order_relaxed);
+      } else if (sample_rate_ > 0) {
+        position_ms_.store(decoded_frames_ * 1000 / sample_rate_,
+                           std::memory_order_relaxed);
+      }
+      decoded_frames_ += frame_->nb_samples;
       *frames_read = static_cast<int>(converted_.size() / 2);
       *out = converted_;
       av_frame_unref(frame_);

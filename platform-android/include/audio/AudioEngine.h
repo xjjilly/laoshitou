@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "audio/FfmpegDecoder.h"
+#include "audio/MediaSource.h"
 #include "audio/OboeOutput.h"
 #include "dsp/AudioRingBuffer.h"
 #include "dsp/DspChain.h"
@@ -69,7 +70,18 @@ class AudioEngine {
 
   bool start_test_tone(int requested_sample_rate);
   bool start_file(const std::string& path, const PlaybackOptions& options);
+  // Starts from an arbitrary random-access byte source (DMR LAN stream).
+  // FFmpeg stays --disable-network; the source owns all I/O.
+  bool start_source(std::unique_ptr<MediaSource> source, const PlaybackOptions& options);
   void stop();
+
+  // Seeks while running. Reopens the output and restarts the producer so the
+  // ring, resampler and DSP state are reset without racing the audio callback.
+  bool seek_to_ms(std::int64_t position_ms);
+  // Audible position estimate (decoder position minus buffered ring frames).
+  [[nodiscard]] std::int64_t position_ms() const noexcept;
+  [[nodiscard]] std::int64_t duration_ms() const noexcept;
+  [[nodiscard]] const std::string& last_error() const noexcept;
 
   // True when Oboe reported that the output stream was closed by the platform
   // (device change, USB unplug, Bluetooth route change). The owner should call
@@ -99,7 +111,6 @@ class AudioEngine {
   [[nodiscard]] bool cross_family_fallback() const noexcept;
   [[nodiscard]] bool non_integer_ratio() const noexcept;
   [[nodiscard]] bool device_limited() const noexcept;
-  [[nodiscard]] bool is_exclusive() const noexcept;
   [[nodiscard]] bool source_eof() const noexcept;
   [[nodiscard]] bool processing_mode() const noexcept;
   [[nodiscard]] int eq_band_count() const noexcept;
@@ -109,8 +120,11 @@ class AudioEngine {
   [[nodiscard]] bool eq_linear_phase_active() const noexcept;
   [[nodiscard]] bool fir_degraded() const noexcept;
   [[nodiscard]] int64_t underruns() const noexcept;
+  [[nodiscard]] int64_t xruns() const noexcept;
+  [[nodiscard]] double latency_ms();
 
  private:
+  bool start_decoder(std::unique_ptr<FfmpegDecoder> decoder);
   void fill_tone(int sample_rate, std::size_t frames, double* phase);
   void producer_loop(int sample_rate, double phase);
   void file_producer_loop();
@@ -143,6 +157,7 @@ class AudioEngine {
   bool limiter_enabled_ = false;
   bool paused_ = false;
   float gain_ = 1.0f;
+  std::string last_error_;
 };
 
 }  // namespace audio

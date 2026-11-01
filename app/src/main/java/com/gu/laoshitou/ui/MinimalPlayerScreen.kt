@@ -68,6 +68,9 @@ fun MinimalPlayerScreen(state: PlayerState, actions: PlayerActions) {
                         style = MaterialTheme.typography.displaySmall,
                         modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { actions.setDlnaOpen(true) }) {
+                        Text("DLNA")
+                    }
                     TextButton(onClick = { actions.setAboutOpen(true) }) {
                         Text("关于")
                     }

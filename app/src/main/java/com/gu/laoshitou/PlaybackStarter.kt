@@ -40,6 +40,49 @@ fun queryDisplayName(context: Context, uri: Uri): String {
     return uri.lastPathSegment ?: "所选音频文件"
 }
 
+internal data class NativeOutputPlan(
+    val supportedRates: IntArray,
+    val nativeRate: Int,
+    val usbDetected: Boolean,
+)
+
+/** Queries the current output route once for both local playback and the DMR. */
+internal fun queryNativeOutputPlan(context: Context): NativeOutputPlan {
+    val audioManager = context.getSystemService(AudioManager::class.java)
+    val nativeRate = audioManager
+        ?.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+        ?.toIntOrNull()
+        ?: 0
+    val outputDevices = audioManager
+        ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        ?: emptyArray()
+    // MIUI 的 AudioManager 常漏报 USB 音频设备（系统路由已在 USB 上但枚举
+    // 不到），用 UsbManager 枚举物理 USB 音频接口作为补充检测。
+    val usbAudioPresent = context.getSystemService(UsbManager::class.java)
+        ?.deviceList?.values?.any { usbDevice ->
+            (0 until usbDevice.interfaceCount).any { index ->
+                usbDevice.getInterface(index).interfaceClass == UsbConstants.USB_CLASS_AUDIO
+            }
+        }
+        ?: false
+    val usbDetected = outputDevices.any { device ->
+        device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+            device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+    } || usbAudioPresent
+
+    // USB 音频存在时把通用 DAC 采样率并入规划集合：漏报的设备没有
+    // sampleRates，缺了它们采样率规划会退化到内置输出的 48k 共享。
+    val standardUsbRates = intArrayOf(44100, 48000, 88200, 96000, 176400, 192000)
+    val supportedRates = (
+        outputDevices.flatMap { it.sampleRates.toList() } +
+            if (usbAudioPresent) standardUsbRates.toList() else emptyList()
+        )
+        .distinct()
+        .sorted()
+        .toIntArray()
+    return NativeOutputPlan(supportedRates, nativeRate, usbDetected)
+}
+
 fun startPlayback(
     context: Context,
     path: String,
@@ -68,39 +111,10 @@ fun startPlayback(
     multibandHighHz: Double,
     multibandThresholdDb: Double,
 ): PlaybackStartResult {
-    val audioManager = context.getSystemService(AudioManager::class.java)
-    val nativeRate = audioManager
-        ?.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
-        ?.toIntOrNull()
-        ?: 0
-    val outputDevices = audioManager
-        ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        ?: emptyArray()
-    // MIUI 的 AudioManager 常漏报 USB 音频设备（系统路由已在 USB 上但枚举
-    // 不到），用 UsbManager 枚举物理 USB 音频接口作为补充检测。
-    val usbAudioPresent = context.getSystemService(UsbManager::class.java)
-        ?.deviceList?.values?.any { usbDevice ->
-            (0 until usbDevice.interfaceCount).any { index ->
-                usbDevice.getInterface(index).interfaceClass == UsbConstants.USB_CLASS_AUDIO
-            }
-        }
-        ?: false
-    val usbDetected = outputDevices.any { device ->
-        device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-            device.type == AudioDeviceInfo.TYPE_USB_HEADSET
-    } || usbAudioPresent
-
-    // USB 音频存在时把通用 DAC 采样率并入规划集合：漏报的设备没有
-    // sampleRates，缺了它们采样率规划会退化到内置输出的 48k 共享。
-    val standardUsbRates = intArrayOf(44100, 48000, 88200, 96000, 176400, 192000)
-    val supportedRates = (
-        outputDevices
-            .flatMap { it.sampleRates.toList() } +
-            if (usbAudioPresent) standardUsbRates.toList() else emptyList()
-        )
-        .distinct()
-        .sorted()
-        .toIntArray()
+    val plan = queryNativeOutputPlan(context)
+    val supportedRates = plan.supportedRates
+    val nativeRate = plan.nativeRate
+    val usbDetected = plan.usbDetected
 
     val started = runCatching {
         NativeBridge.startFile(
@@ -191,7 +205,6 @@ fun startPlayback(
         appendLine("跨采样率族：${yesNo(NativeBridge.playbackCrossFamily())}")
         appendLine("非整数倍转换：${yesNo(NativeBridge.playbackNonInteger())}")
         appendLine("受设备限制：${yesNo(NativeBridge.playbackDeviceLimited())}")
-        appendLine("独占模式：${yesNo(NativeBridge.playbackExclusive())}")
         append("欠载次数：${NativeBridge.playbackUnderruns()}")
     }
     return PlaybackStartResult(true, status)

@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "audio/AudioEngine.h"
+#include "audio/JavaMediaSource.h"
 #include "audio/FfmpegInfo.h"
 #include "dsp/AutoEqFitter.h"
 #include "dsp/AutoEqProfile.h"
@@ -83,12 +85,6 @@ Java_com_gu_laoshitou_NativeBridge_testToneActualRate(JNIEnv* /*env*/, jobject /
   return g_engine ? static_cast<jint>(g_engine->actual_sample_rate()) : 0;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_gu_laoshitou_NativeBridge_testToneExclusive(JNIEnv* /*env*/, jobject /*thiz*/) {
-  std::lock_guard<std::mutex> lock(g_engine_mutex);
-  return (g_engine && g_engine->is_exclusive()) ? JNI_TRUE : JNI_FALSE;
-}
-
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_gu_laoshitou_NativeBridge_testToneUnderruns(JNIEnv* /*env*/, jobject /*thiz*/) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
@@ -138,6 +134,78 @@ extern "C" JNIEXPORT jfloatArray JNICALL Java_com_gu_laoshitou_NativeBridge_load
   return result;
 }
 
+namespace {
+
+bool FillPlaybackOptions(JNIEnv* env, jboolean processing, jintArray supported_rates,
+                         jint native_rate, jstring eq_profile_path, jboolean crossfeed,
+                         jboolean eq_cascade, jboolean eq_slope_enabled, jdouble eq_slope,
+                         jint forced_sample_rate, jint resampler_quality,
+                         jdouble crossfeed_width, jdouble stereo_width,
+                         jboolean loudness_enabled, jdouble loudness_volume,
+                         jboolean limiter_enabled, jdouble limiter_threshold_db,
+                         jboolean usb_dac_detected, jboolean auto_usb_192k, jstring brir_path,
+                         jboolean brir_enabled, jdouble brir_mix, jboolean eq_linear_phase,
+                         jboolean multiband_enabled, jdouble multiband_low_hz,
+                         jdouble multiband_high_hz, jdouble multiband_threshold_db,
+                         audio::PlaybackOptions* options) {
+  if (options == nullptr) {
+    return false;
+  }
+  dsp::DeviceRates device;
+  device.native_rate = static_cast<int>(native_rate);
+  if (supported_rates != nullptr) {
+    const jsize length = env->GetArrayLength(supported_rates);
+    if (length > 0) {
+      std::vector<jint> values(static_cast<std::size_t>(length));
+      env->GetIntArrayRegion(supported_rates, 0, length, values.data());
+      device.supported_rates.assign(values.begin(), values.end());
+    }
+  }
+
+  audio::PlaybackOptions parsed;
+  parsed.mode = processing != JNI_FALSE ? dsp::OutputMode::kProcessing : dsp::OutputMode::kDirect;
+  parsed.device = std::move(device);
+  parsed.crossfeed_enabled = crossfeed != JNI_FALSE;
+  parsed.limiter_enabled = limiter_enabled != JNI_FALSE;
+  parsed.eq_cascade = eq_cascade != JNI_FALSE;
+  parsed.eq_use_slope = eq_slope_enabled != JNI_FALSE;
+  parsed.eq_slope = static_cast<double>(eq_slope);
+  parsed.forced_sample_rate = static_cast<int>(forced_sample_rate);
+  parsed.resampler_quality = static_cast<int>(resampler_quality);
+  parsed.crossfeed_width = static_cast<double>(crossfeed_width);
+  parsed.stereo_width = static_cast<double>(stereo_width);
+  parsed.loudness_enabled = loudness_enabled != JNI_FALSE;
+  parsed.loudness_volume = static_cast<double>(loudness_volume);
+  parsed.limiter_threshold_db = static_cast<double>(limiter_threshold_db);
+  parsed.usb_dac_detected = usb_dac_detected != JNI_FALSE;
+  parsed.auto_usb_192k = auto_usb_192k != JNI_FALSE;
+  parsed.brir_enabled = brir_enabled != JNI_FALSE;
+  parsed.brir_mix = static_cast<double>(brir_mix);
+  parsed.eq_linear_phase = eq_linear_phase != JNI_FALSE;
+  parsed.multiband.enabled = multiband_enabled != JNI_FALSE;
+  parsed.multiband.crossover_low_hz = static_cast<double>(multiband_low_hz);
+  parsed.multiband.crossover_high_hz = static_cast<double>(multiband_high_hz);
+  parsed.multiband.low.threshold_db = static_cast<double>(multiband_threshold_db);
+  if (brir_path != nullptr) {
+    const char* brir_chars = env->GetStringUTFChars(brir_path, nullptr);
+    if (brir_chars != nullptr) {
+      parsed.brir_path = brir_chars;
+      env->ReleaseStringUTFChars(brir_path, brir_chars);
+    }
+  }
+  if (eq_profile_path != nullptr) {
+    const char* eq_chars = env->GetStringUTFChars(eq_profile_path, nullptr);
+    if (eq_chars != nullptr) {
+      parsed.eq_profile_path = eq_chars;
+      env->ReleaseStringUTFChars(eq_profile_path, eq_chars);
+    }
+  }
+  *options = std::move(parsed);
+  return true;
+}
+
+}  // namespace
+
 extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFile(
     JNIEnv* env, jobject /*thiz*/, jstring path, jboolean processing, jintArray supported_rates,
     jint native_rate, jstring eq_profile_path, jboolean crossfeed, jboolean eq_cascade,
@@ -157,55 +225,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFi
   std::string file_path(chars);
   env->ReleaseStringUTFChars(path, chars);
 
-  dsp::DeviceRates device;
-  device.native_rate = static_cast<int>(native_rate);
-  if (supported_rates != nullptr) {
-    const jsize length = env->GetArrayLength(supported_rates);
-    if (length > 0) {
-      std::vector<jint> values(static_cast<std::size_t>(length));
-      env->GetIntArrayRegion(supported_rates, 0, length, values.data());
-      device.supported_rates.assign(values.begin(), values.end());
-    }
-  }
-
   audio::PlaybackOptions options;
-  options.mode = processing != JNI_FALSE ? dsp::OutputMode::kProcessing : dsp::OutputMode::kDirect;
-  options.device = std::move(device);
-  options.crossfeed_enabled = crossfeed != JNI_FALSE;
-  options.limiter_enabled = limiter_enabled != JNI_FALSE;
-  options.eq_cascade = eq_cascade != JNI_FALSE;
-  options.eq_use_slope = eq_slope_enabled != JNI_FALSE;
-  options.eq_slope = static_cast<double>(eq_slope);
-  options.forced_sample_rate = static_cast<int>(forced_sample_rate);
-  options.resampler_quality = static_cast<int>(resampler_quality);
-  options.crossfeed_width = static_cast<double>(crossfeed_width);
-  options.stereo_width = static_cast<double>(stereo_width);
-  options.loudness_enabled = loudness_enabled != JNI_FALSE;
-  options.loudness_volume = static_cast<double>(loudness_volume);
-  options.limiter_threshold_db = static_cast<double>(limiter_threshold_db);
-  options.usb_dac_detected = usb_dac_detected != JNI_FALSE;
-  options.auto_usb_192k = auto_usb_192k != JNI_FALSE;
-  options.brir_enabled = brir_enabled != JNI_FALSE;
-  options.brir_mix = static_cast<double>(brir_mix);
-  options.eq_linear_phase = eq_linear_phase != JNI_FALSE;
-  options.multiband.enabled = multiband_enabled != JNI_FALSE;
-  options.multiband.crossover_low_hz = static_cast<double>(multiband_low_hz);
-  options.multiband.crossover_high_hz = static_cast<double>(multiband_high_hz);
-  options.multiband.low.threshold_db = static_cast<double>(multiband_threshold_db);
-  if (brir_path != nullptr) {
-    const char* brir_chars = env->GetStringUTFChars(brir_path, nullptr);
-    if (brir_chars != nullptr) {
-      options.brir_path = brir_chars;
-      env->ReleaseStringUTFChars(brir_path, brir_chars);
-    }
-  }
-
-  if (eq_profile_path != nullptr) {
-    const char* eq_chars = env->GetStringUTFChars(eq_profile_path, nullptr);
-    if (eq_chars != nullptr) {
-      options.eq_profile_path = eq_chars;
-      env->ReleaseStringUTFChars(eq_profile_path, eq_chars);
-    }
+  if (!FillPlaybackOptions(env, processing, supported_rates, native_rate, eq_profile_path,
+                           crossfeed, eq_cascade, eq_slope_enabled, eq_slope,
+                           forced_sample_rate, resampler_quality, crossfeed_width, stereo_width,
+                           loudness_enabled, loudness_volume, limiter_enabled,
+                           limiter_threshold_db, usb_dac_detected, auto_usb_192k, brir_path,
+                           brir_enabled, brir_mix, eq_linear_phase, multiband_enabled,
+                           multiband_low_hz, multiband_high_hz, multiband_threshold_db,
+                           &options)) {
+    return JNI_FALSE;
   }
 
   std::lock_guard<std::mutex> lock(g_engine_mutex);
@@ -213,9 +242,51 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFi
     g_engine->stop();
     g_engine.reset();
   }
-
   auto engine = std::make_unique<audio::AudioEngine>();
   if (!engine->start_file(file_path, options)) {
+    return JNI_FALSE;
+  }
+  g_engine = std::move(engine);
+  return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startSource(
+    JNIEnv* env, jobject /*thiz*/, jobject data_source, jboolean processing,
+    jintArray supported_rates, jint native_rate, jstring eq_profile_path, jboolean crossfeed,
+    jboolean eq_cascade, jboolean eq_slope_enabled, jdouble eq_slope, jint forced_sample_rate,
+    jint resampler_quality, jdouble crossfeed_width, jdouble stereo_width,
+    jboolean loudness_enabled, jdouble loudness_volume, jboolean limiter_enabled,
+    jdouble limiter_threshold_db, jboolean usb_dac_detected, jboolean auto_usb_192k,
+    jstring brir_path, jboolean brir_enabled, jdouble brir_mix, jboolean eq_linear_phase,
+    jboolean multiband_enabled, jdouble multiband_low_hz, jdouble multiband_high_hz,
+    jdouble multiband_threshold_db) {
+  if (data_source == nullptr) {
+    return JNI_FALSE;
+  }
+  audio::PlaybackOptions options;
+  if (!FillPlaybackOptions(env, processing, supported_rates, native_rate, eq_profile_path,
+                           crossfeed, eq_cascade, eq_slope_enabled, eq_slope,
+                           forced_sample_rate, resampler_quality, crossfeed_width, stereo_width,
+                           loudness_enabled, loudness_volume, limiter_enabled,
+                           limiter_threshold_db, usb_dac_detected, auto_usb_192k, brir_path,
+                           brir_enabled, brir_mix, eq_linear_phase, multiband_enabled,
+                           multiband_low_hz, multiband_high_hz, multiband_threshold_db,
+                           &options)) {
+    return JNI_FALSE;
+  }
+
+  auto source = std::make_unique<audio::JavaMediaSource>(env, data_source);
+  if (!source->last_error().empty()) {
+    return JNI_FALSE;
+  }
+
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  if (g_engine) {
+    g_engine->stop();
+    g_engine.reset();
+  }
+  auto engine = std::make_unique<audio::AudioEngine>();
+  if (!engine->start_source(std::move(source), options)) {
     return JNI_FALSE;
   }
   g_engine = std::move(engine);
@@ -247,12 +318,6 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_gu_laoshitou_NativeBridge_playbackSourceRate(JNIEnv* /*env*/, jobject /*thiz*/) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
   return g_engine ? static_cast<jint>(g_engine->source_sample_rate()) : 0;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_gu_laoshitou_NativeBridge_playbackExclusive(JNIEnv* /*env*/, jobject /*thiz*/) {
-  std::lock_guard<std::mutex> lock(g_engine_mutex);
-  return (g_engine && g_engine->is_exclusive()) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -416,4 +481,49 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_gu_laoshitou_NativeBridge_playbackFirDegraded(JNIEnv* /*env*/, jobject /*thiz*/) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
   return (g_engine && g_engine->fir_degraded()) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_gu_laoshitou_NativeBridge_seekPlayback(JNIEnv* /*env*/, jobject /*thiz*/,
+                                                jlong position_ms) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return (g_engine && g_engine->seek_to_ms(static_cast<std::int64_t>(position_ms)))
+             ? JNI_TRUE
+             : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackPositionMs(JNIEnv* /*env*/, jobject /*thiz*/) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return g_engine ? static_cast<jlong>(g_engine->position_ms()) : 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackDurationMs(JNIEnv* /*env*/, jobject /*thiz*/) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return g_engine ? static_cast<jlong>(g_engine->duration_ms()) : 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackXruns(JNIEnv* /*env*/, jobject /*thiz*/) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return g_engine ? static_cast<jlong>(g_engine->xruns()) : 0;
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackLatencyMs(JNIEnv* /*env*/, jobject /*thiz*/) {
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return g_engine ? g_engine->latency_ms() : 0.0;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_gu_laoshitou_NativeBridge_playbackLastError(JNIEnv* env, jobject /*thiz*/) {
+  std::string error;
+  {
+    std::lock_guard<std::mutex> lock(g_engine_mutex);
+    if (g_engine) {
+      error = g_engine->last_error();
+    }
+  }
+  return env->NewStringUTF(error.c_str());
 }

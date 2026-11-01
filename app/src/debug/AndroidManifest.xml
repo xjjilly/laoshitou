@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Debug-only M0 harness activity. DLNA permissions live in the main
+         manifest because the production DLNA screen uses them. -->
+    <application>
+        <activity
+            android:name=".dlna.M0Activity"
+            android:exported="true"
+            android:keepScreenOn="true"
+            android:label="M0 DLNA 测试"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+</manifest>

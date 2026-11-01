@@ -2,6 +2,7 @@ add_library(hifi_platform_android STATIC
   src/AudioEngine.cpp
   src/FfmpegDecoder.cpp
   src/FfmpegInfo.cpp
+  src/JavaMediaSource.cpp
   src/OboeOutput.cpp
 )
 

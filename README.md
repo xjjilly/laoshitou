@@ -1,6 +1,6 @@
 # 老石头 · LaoShiTou
 
-本地优先、音质优先的 Android 播放器。**无广告、无在线曲库、无账号、无遥测，未申请 `INTERNET` 权限**；解码、DSP、文件访问全部在本机完成，系统云备份也已关闭。音乐库读取手机根目录的 `laoshitou/` 文件夹，为此申请「所有文件访问」权限。
+本地优先、音质优先的 Android 播放器。**无广告、无在线曲库、无账号、无遥测；默认离线**。解码、DSP、文件访问全部在本机完成，系统云备份也已关闭。音乐库读取手机根目录的 `laoshitou/` 文件夹，为此申请「所有文件访问」权限。可选的 DLNA 功能仅在用户于局域网中主动启用后工作，只访问局域网，不连接互联网；为此申请 `INTERNET` 与 `NEARBY_WIFI_DEVICES`，关闭 DLNA 时零网络行为。
 
 > **本软件所有代码开源，免费下载。如果你是花钱买的，你被骗了，请立刻退款并举报。**
 
@@ -17,14 +17,14 @@
 - **硬核 DSP 链**：16 段可视化 PEQ（IIR / 线性相位 FIR）、PK/LSC/HSC/HPF/LPF、2/4 阶级联、AutoEQ txt/CSV/GraphicEQ 导入、预增益与可调限制器、三段多段压缩。
 - **预设系统**：12 个场景预设（FPS 听声辩位、电影、流行、摇滚、古典、播客、深夜、低音增强、高音、Live 等）；调好的 16 段 EQ 与开关可存为**用户预设**，重启保留。
 - **EQ 实时调音**：播放中应用 16 段 EQ 立即生效（无需重新播放）；选中频点显示精确数值，±0.5dB 微调。
-- **Oboe 低延迟输出**：请求 Exclusive 独占模式，设备不支持时自动回退 Shared；USB DAC 自动 192k。
+- **Oboe 低延迟输出**：共享输出（经 Android 系统混音器），不再请求 Exclusive；USB DAC 自动 192k。
 - **DSD 与高解析**：DSD64（DSF/DFF，非压缩）本地解码；FLAC/WAV/ALAC/AAC/MP3/APE/WavPack/TTA 等由 FFmpeg 原生解码。
 - **BRIR 卷积混响**：分区 FFT、立体声 BRIR WAV、湿/干比例可调，约 43 ms 分块延迟；内置 9 个 BRIR/HRTF 测试素材（SADIE II 等），首次启动自动复制到应用 IR 目录。
 - **声场控制**：libbs2b Crossfeed 强度、M/S 声场拓宽（0-150%）、响度补偿与限幅保护。
 - **设备切换自动恢复**：蓝牙/有线/USB 路由变化导致 Oboe 断流时自动重开；同采样率保留环形缓冲与 DSP 状态，采样率变化则重建重采样与 DSP 链。
 - **三种界面**：极简 / 沉浸 / 高保真，共享同一播放与曲库状态。
 - **纯本地曲库**：扫描手机根目录 `laoshitou/` 文件夹，专辑按子文件夹组织，顺序/循环/随机，支持媒体按键、前台服务与音频焦点。
-- **隐私优先**：无 `INTERNET` 权限、无广告 SDK、无在线曲库、无遥测；仅申请「所有文件访问」（读取 `laoshitou/` 音乐目录所需，DSD 等非标准媒体扩展名无法用常规媒体权限读取）；`android:allowBackup="false"`，不向云端备份数据。
+- **隐私优先**：默认离线；DLNA 是可选功能，关闭时零网络行为。开启后只加入局域网组播、监听局域网端口、访问局域网内控制/媒体地址，不连接互联网、不上传文件。权限包括「所有文件访问」（读取 `laoshitou/` 音乐目录所需，DSD 等非标准媒体扩展名无法用常规媒体权限读取）、`INTERNET`、`ACCESS_NETWORK_STATE`、`ACCESS_WIFI_STATE`、`CHANGE_WIFI_MULTICAST_STATE` 与 `NEARBY_WIFI_DEVICES`（仅用于局域网能力）；`android:allowBackup="false"`，不向云端备份数据。
 - **GPLv3**：完整源代码随发布提供，第三方组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## Architecture (Route B)
@@ -35,13 +35,13 @@ FFmpeg decode thread
   -> libsamplerate (SRC_SINC_BEST_QUALITY)
   -> lock-free SPSC ring (200-500 ms)
   -> Oboe callback: preamp/PEQ (AutoEQ) -> crossfeed -> look-ahead limiter -> volume fade
-  -> Oboe output (Exclusive requested, Shared fallback)
+  -> Oboe output (shared stream)
 ```
 
 Two playback modes:
 
-- **Direct**: bit-perfect, DSP bypassed, source sample rate when the device
-  supports it.
+- **Direct**: DSP bypassed, source sample rate when the device supports it.
+  Android's system mixer still participates, so this is not bit-perfect.
 - **Processing**: family-preserving integer-multiple upsampling, then DSP.
 
 ## Status
@@ -50,8 +50,8 @@ Two playback modes:
 - [x] `SampleRatePolicy` implementation and host tests
 - [x] SPSC PCM ring buffer (PortAudio) and host tests
 - [x] Kotlin + Compose app shell, JNI, Oboe Prefab
-- [x] Oboe output backend + 440 Hz test tone (Exclusive requested, actual
-      sharing mode / rate reported in the UI)
+- [x] Oboe output backend + 440 Hz test tone (shared stream; actual output
+      rate reported in the UI)
 - [x] FFmpeg 7.1 LGPL static build (arm64-v8a) linked into the native library;
       the UI reports the FFmpeg version
 - [x] FFmpeg decode pump + file playback path (decode -> stereo float ->
@@ -129,7 +129,20 @@ Two playback modes:
       where to copy music; one-tap migration from the old app-private folder;
       All Files Access permission flow (API 30+)
 - [ ] Seek/position/duration
-- [ ] Device verification of Exclusive mode and long-run stability
+- [ ] Device verification of long-run stability
+- [x] DLNA/UPnP: 发送者 (DMS media server + DMC casting MVP) and 接收者
+      (DMR renderer, native FFmpeg + app DSP chain, MediaPlayer fallback), one role chosen per
+      Wi-Fi session; design in `docs/DLNA_UPNP_PLAN.md`. The DLNA screen is
+      available from all three player UIs; off by default and LAN-only.
+      DMR supports FLAC/WAV/MP3/AAC/DSF and keeps the 16-band visual EQ in
+      sync; DFF (DSDIFF) is not accepted by DMR (local playback still supports
+      DFF). DSD playback is CPU-heavy (~80% of one core on the test phone) —
+      that is the compute-for-quality trade-off; lower the resampler quality
+      or use Direct mode to reduce it. 第三方控制点/渲染器矩阵按用户要求不再考虑。
+      **小米/HyperOS 注意**：请把本应用的「省电策略」设为「无限制」
+      （设置 → 应用信息 → 老石头 → 电量详情 → 省电策略 → 无限制）。
+      否则息屏后系统会冻结后台应用并切断局域网连接，DMS 将无法被电视/音箱访问；
+      最近任务锁定不能替代此设置。
 
 ## Audio route changes
 
@@ -162,13 +175,14 @@ AudioEngine: output reopened: requested=48000 actual=48000 (ring preserved)
 
 ## Download / install
 
-- Signed release APK: `artifacts/app-release-signed.apk`
+- Signed release APK: `artifacts/LaoShiTou-Android-v1.3-signed.apk`
 - Debug build: `app/build/outputs/apk/debug/app-debug.apk`
-- Checksums: `artifacts/SHA256SUMS`
-- Release notes: `RELEASE_NOTES_v1.1.md`
+- Checksums: `artifacts/SHA256SUMS-v1.3.txt`
+- Release notes: `RELEASE_NOTES_v1.3.md`
+- 小白用户使用说明（中文）：`docs/APK_USER_GUIDE.md`
 
 ```sh
-adb install -r artifacts/app-release-signed.apk
+adb install -r artifacts/LaoShiTou-Android-v1.3-signed.apk
 ```
 
 The signed release uses a local PKCS12 keystore that is **not** committed.
@@ -194,14 +208,14 @@ To build it yourself:
    ```
 
 The GPLv3 corresponding source bundle is
-`artifacts/laoshitou-1.1-source.tar.gz`; it includes the app source,
+`artifacts/laoshitou-1.3-source.tar.gz`; it includes the app source,
 third-party sources, license texts and the exact FFmpeg 7.1 tarball. Publish
 it together with any binary release.
 
 On the phone, open **老石头**:
 
 1. Tap **测试音** to validate the Oboe path. The UI reports the actual
-   output rate and whether Oboe granted Exclusive mode.
+   output rate.
 2. The **音乐专辑** card scans `/sdcard/laoshitou/` at startup and after
    **扫描**, and rescans automatically whenever the app returns to the
    foreground. Each subfolder is one album, named after the folder. Tap an
@@ -266,8 +280,9 @@ Direct mode bypasses the chain. The EQ profile is an AutoEQ
 - **Crossfeed**: MIT libbs2b (weak/medium/strong; default weak).
 - **Limiter**: stereo look-ahead peak limiter, adjustable threshold
   (default -1 dBFS; UI -12..0), 5 ms look-ahead, 100 ms release.
-- **Direct mode** passes `nullptr` to the DSP chain and is bit-perfect
-  (no EQ/crossfeed/limiter).
+- **Direct mode** passes `nullptr` to the DSP chain (no EQ/crossfeed/
+  limiter). It is not bit-perfect: Android's system mixer still processes
+  the stream.
 
 The AutoEQ importer supports:
 
@@ -301,7 +316,7 @@ uses `SRC_SINC_BEST_QUALITY` for PCM sources up to 192 kHz (including
 and above), where BEST cannot sustain real time on mobile. The app also
 exposes a **manual output-rate override** (自动 / 44.1k / 48k / 96k / 192k)
 for USB DACs whose `AudioDeviceInfo` only reports 48 kHz. With the lifeme
-dongle, 192k exclusive output was stable at 0 underruns; 384k is not offered
+dongle, 192k shared output was stable at 0 underruns; 384k is not offered
 because the Android USB route rejected it.
 
 ## Performance tuning (phone + USB DAC)

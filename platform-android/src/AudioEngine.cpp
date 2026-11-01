@@ -24,21 +24,6 @@ constexpr float kAmplitude = 0.1f;
 constexpr int kChannels = 2;
 constexpr std::size_t kBlockFrames = 480;
 
-// 同采样率族内、低于目标率的候选采样率（降序），用于目标率拿不到独占时
-// 逐级降档重试：44.1 族与 48 族各三档。
-std::vector<int> exclusive_fallback_rates(int source_rate, int policy_rate) {
-  const bool family_44 = source_rate % 8000 != 0;
-  const std::vector<int> family =
-      family_44 ? std::vector<int>{176400, 88200, 44100} : std::vector<int>{192000, 96000, 48000};
-  std::vector<int> out;
-  for (int rate : family) {
-    if (rate < policy_rate) {
-      out.push_back(rate);
-    }
-  }
-  return out;
-}
-
 }  // namespace
 
 AudioEngine::~AudioEngine() { stop(); }
@@ -109,28 +94,58 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
   stop();
   options_ = options;
   test_tone_ = false;
+  last_error_.clear();
 
+  auto decoder = std::make_unique<FfmpegDecoder>();
+  if (!decoder->open(path)) {
+    last_error_ = decoder->last_error();
+    __android_log_print(ANDROID_LOG_ERROR, kLogTag, "open failed: %s", last_error_.c_str());
+    return false;
+  }
+  const bool started = start_decoder(std::move(decoder));
+  if (!started && last_error_.empty()) {
+    last_error_ = "failed to start playback";
+  }
+  return started;
+}
+
+bool AudioEngine::start_source(std::unique_ptr<MediaSource> source,
+                               const PlaybackOptions& options) {
+  stop();
+  options_ = options;
+  test_tone_ = false;
+  last_error_.clear();
+
+  auto decoder = std::make_unique<FfmpegDecoder>();
+  if (!decoder->open_source(std::move(source))) {
+    last_error_ = decoder->last_error();
+    __android_log_print(ANDROID_LOG_ERROR, kLogTag, "open stream failed: %s",
+                        last_error_.c_str());
+    return false;
+  }
+  const bool started = start_decoder(std::move(decoder));
+  if (!started && last_error_.empty()) {
+    last_error_ = "failed to start stream playback";
+  }
+  return started;
+}
+
+bool AudioEngine::start_decoder(std::unique_ptr<FfmpegDecoder> decoder) {
   try {
-    decoder_ = std::make_unique<FfmpegDecoder>();
-    if (!decoder_->open(path)) {
-      __android_log_print(ANDROID_LOG_ERROR, kLogTag, "open failed: %s",
-                          decoder_->last_error().c_str());
-      decoder_.reset();
-      return false;
-    }
-
+    decoder_ = std::move(decoder);
     const int source_rate = decoder_->sample_rate();
     if (source_rate <= 0) {
+      last_error_ = "invalid source sample rate";
       decoder_.reset();
       return false;
     }
 
-    const dsp::RatePlan plan = dsp::MakeRatePlan(source_rate, options.mode, options.device);
+    const dsp::RatePlan plan = dsp::MakeRatePlan(source_rate, options_.mode, options_.device);
     const int policy_rate = plan.target_rate > 0 ? plan.target_rate : source_rate;
     int requested_rate = policy_rate;
-    if (options.forced_sample_rate >= 8000 && options.forced_sample_rate <= 768000) {
-      requested_rate = options.forced_sample_rate;
-    } else if (options.usb_dac_detected && options.auto_usb_192k && source_rate > 0 &&
+    if (options_.forced_sample_rate >= 8000 && options_.forced_sample_rate <= 768000) {
+      requested_rate = options_.forced_sample_rate;
+    } else if (options_.usb_dac_detected && options_.auto_usb_192k && source_rate > 0 &&
                source_rate <= 192000 && source_rate % 8000 == 0) {
       // 48 kHz-family PCM fed to a USB DAC: prefer its 192 kHz path when the
       // platform reports only 48 kHz. 44.1-family content is left to the
@@ -141,45 +156,22 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
 
     output_ = std::make_unique<OboeOutput>();
     bool opened = output_->open(requested_rate, kChannels);
-    if (opened && !output_->is_exclusive() && options.forced_sample_rate <= 0) {
-      // 优先保住独占（处理与直通模式都适用）：目标采样率只能以共享模式打开时
-      // （很多 DAC 的 MMAP 不支持 88.2/176.4k），在同族内逐级降档重试，拿到
-      // 独占为止。共享模式同样无法 bit-perfect（系统混音器参与），因此直通
-      // 模式下用同族整数降档 + 独占也优于共享混音。全族都拿不到独占时回到
-      // 最初的请求率，保持原有行为。
-      const int first_rate = requested_rate;
-      for (int candidate : exclusive_fallback_rates(source_rate, policy_rate)) {
-        output_->stop();
-        if (!output_->open(candidate, kChannels)) {
-          output_->stop();
-          opened = output_->open(first_rate, kChannels);
-          break;
-        }
-        if (output_->is_exclusive()) {
-          requested_rate = candidate;
-          break;
-        }
-      }
-      if (opened && !output_->is_exclusive()) {
-        output_->stop();
-        opened = output_->open(first_rate, kChannels);
-      }
-    }
     if (!opened && requested_rate != source_rate) {
       // The policy target may be supported by another output route but not by
       // the current one. A forced rate that the USB device rejects can make it
       // re-enumerate; give the route a moment to settle before retrying.
-      if (options.forced_sample_rate > 0) {
+      if (options_.forced_sample_rate > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
       }
       requested_rate = source_rate;
       opened = output_->open(requested_rate, kChannels);
     }
-    if (!opened && options.device.native_rate > 0 && requested_rate != options.device.native_rate) {
-      requested_rate = options.device.native_rate;
+    if (!opened && options_.device.native_rate > 0 && requested_rate != options_.device.native_rate) {
+      requested_rate = options_.device.native_rate;
       opened = output_->open(requested_rate, kChannels);
     }
     if (!opened) {
+      last_error_ = "failed to open audio output";
       output_.reset();
       decoder_.reset();
       return false;
@@ -187,6 +179,7 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
 
     const int actual_rate = output_->actual_sample_rate();
     if (actual_rate <= 0) {
+      last_error_ = "invalid actual sample rate";
       output_->stop();
       output_.reset();
       decoder_.reset();
@@ -207,7 +200,8 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
     paused_ = false;
     gain_ = 1.0f;
 
-    if (!configure_resampler(source_rate, actual_rate, options.resampler_quality)) {
+    if (!configure_resampler(source_rate, actual_rate, options_.resampler_quality)) {
+      last_error_ = "failed to configure resampler";
       output_->stop();
       output_.reset();
       decoder_.reset();
@@ -217,7 +211,7 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
 
     source_sample_rate_ = source_rate;
     actual_sample_rate_ = actual_rate;
-    configure_processing(actual_rate, options);
+    configure_processing(actual_rate, options_);
 
     // Let the supplier thread fill part of the ring before starting the
     // stream, so playback does not begin with an underrun.
@@ -226,11 +220,13 @@ bool AudioEngine::start_file(const std::string& path, const PlaybackOptions& opt
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     if (!output_->start()) {
+      last_error_ = "failed to start audio output";
       stop();
       return false;
     }
     return true;
   } catch (...) {
+    last_error_ = "exception while starting playback";
     stop();
     return false;
   }
@@ -272,6 +268,104 @@ void AudioEngine::stop() {
   crossfeed_enabled_ = false;
   limiter_enabled_ = false;
 }
+
+bool AudioEngine::seek_to_ms(std::int64_t position_ms) {
+  if (!running_.load(std::memory_order_acquire) || decoder_ == nullptr ||
+      output_ == nullptr || ring_ == nullptr) {
+    return false;
+  }
+  const std::int64_t target = position_ms < 0 ? 0 : position_ms;
+  const bool was_paused = paused_;
+  const int requested = requested_sample_rate_;
+  const int old_actual = actual_sample_rate_;
+
+  // Stop the producer and the callback before touching the ring/DSP state.
+  running_.store(false, std::memory_order_release);
+  if (producer_.joinable()) {
+    producer_.join();
+  }
+  output_->stop();
+  output_.reset();
+
+  if (!decoder_->seek_ms(target)) {
+    last_error_ = decoder_->last_error();
+    stop();
+    return false;
+  }
+
+  output_ = std::make_unique<OboeOutput>();
+  bool opened = false;
+  int new_actual = 0;
+  const std::array<int, 2> candidates{old_actual, requested};
+  for (const int rate : candidates) {
+    if (rate <= 0) {
+      continue;
+    }
+    if (output_->open(rate, kChannels)) {
+      new_actual = output_->actual_sample_rate();
+      opened = new_actual > 0;
+      if (opened) {
+        break;
+      }
+    }
+    output_->stop();
+  }
+  if (!opened) {
+    last_error_ = "failed to reopen audio output for seek";
+    stop();
+    return false;
+  }
+
+  if (new_actual != old_actual || ring_ == nullptr) {
+    ring_ = std::make_unique<dsp::AudioRingBuffer>(
+        static_cast<std::size_t>(new_actual) * 2U, kChannels);
+  } else {
+    ring_->reset();
+  }
+  actual_sample_rate_ = new_actual;
+  if (!configure_resampler(source_sample_rate_, new_actual, options_.resampler_quality)) {
+    last_error_ = "failed to configure resampler after seek";
+    stop();
+    return false;
+  }
+  update_rate_flags(source_sample_rate_, new_actual);
+
+  output_->set_ring(ring_.get());
+  output_->set_silence_expected(false);
+  output_->set_paused(was_paused);
+  output_->set_target_gain(gain_);
+  configure_processing(new_actual, options_);
+  source_eof_.store(false, std::memory_order_release);
+  running_.store(true, std::memory_order_release);
+  producer_ = std::thread(&AudioEngine::file_producer_loop, this);
+  std::this_thread::sleep_for(std::chrono::milliseconds(120));
+  if (!output_->start()) {
+    last_error_ = "failed to start audio output after seek";
+    stop();
+    return false;
+  }
+  paused_ = was_paused;
+  return true;
+}
+
+std::int64_t AudioEngine::position_ms() const noexcept {
+  if (decoder_ == nullptr) {
+    return 0;
+  }
+  std::int64_t position = decoder_->position_ms();
+  if (ring_ != nullptr && actual_sample_rate_ > 0) {
+    const std::int64_t buffered =
+        static_cast<std::int64_t>(ring_->available_read_frames());
+    position -= buffered * 1000 / actual_sample_rate_;
+  }
+  return position > 0 ? position : 0;
+}
+
+std::int64_t AudioEngine::duration_ms() const noexcept {
+  return decoder_ != nullptr ? decoder_->duration_ms() : 0;
+}
+
+const std::string& AudioEngine::last_error() const noexcept { return last_error_; }
 
 void AudioEngine::set_paused(bool paused) noexcept {
   paused_ = paused;
@@ -487,10 +581,6 @@ bool AudioEngine::non_integer_ratio() const noexcept { return non_integer_ratio_
 
 bool AudioEngine::device_limited() const noexcept { return device_limited_; }
 
-bool AudioEngine::is_exclusive() const noexcept {
-  return output_ != nullptr && output_->is_exclusive();
-}
-
 bool AudioEngine::source_eof() const noexcept {
   if (!source_eof_.load(std::memory_order_acquire)) {
     return false;
@@ -520,6 +610,14 @@ bool AudioEngine::brir_active() const noexcept {
 
 int64_t AudioEngine::underruns() const noexcept {
   return output_ != nullptr ? output_->underrun_count() : 0;
+}
+
+int64_t AudioEngine::xruns() const noexcept {
+  return output_ != nullptr ? output_->xrun_count() : 0;
+}
+
+double AudioEngine::latency_ms() {
+  return output_ != nullptr ? output_->latency_ms() : 0.0;
 }
 
 bool AudioEngine::configure_resampler(int source_rate, int actual_rate, int quality_option) {

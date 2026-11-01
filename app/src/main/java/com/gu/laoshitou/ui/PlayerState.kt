@@ -72,6 +72,7 @@ class PlayerState(
 ) {
     var uiVersion by mutableStateOf(UiVersion.Minimal)
     var aboutOpen by mutableStateOf(false)
+    var dlnaOpen by mutableStateOf(false)
 
     var filePath by mutableStateOf(defaultFilePath)
     var currentPath by mutableStateOf("")
@@ -122,13 +123,13 @@ class PlayerState(
     var eqEditorPreamp by mutableStateOf(0.0)
     var playing by mutableStateOf(false)
     var paused by mutableStateOf(false)
+    var dmrRunning by mutableStateOf(false)
     var status by mutableStateOf("")
     var metrics by mutableStateOf("")
 
     var sourceRate by mutableStateOf(0)
     var targetRate by mutableStateOf(0)
     var outputRate by mutableStateOf(0)
-    var exclusive by mutableStateOf(false)
     var crossFamily by mutableStateOf(false)
     var nonInteger by mutableStateOf(false)
     var deviceLimited by mutableStateOf(false)
@@ -194,6 +195,7 @@ data class PlayerActions(
     val setPlayMode: (PlayMode) -> Unit,
     val setUiVersion: (UiVersion) -> Unit,
     val setAboutOpen: (Boolean) -> Unit,
+    val setDlnaOpen: (Boolean) -> Unit,
     val setFilePath: (String) -> Unit,
     val setEqPath: (String) -> Unit,
 )

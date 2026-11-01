@@ -78,6 +78,9 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                         color = HifiAmber,
                         modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { actions.setDlnaOpen(true) }) {
+                        Text("DLNA")
+                    }
                     TextButton(onClick = { actions.setAboutOpen(true) }) {
                         Text("关于")
                     }
@@ -127,7 +130,6 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                         DspRow("交叉馈送", yn(state.crossfeedActive))
                         DspRow("限制器", yn(state.limiterActive))
                         DspRow("BRIR", yn(state.brirActive))
-                        DspRow("独占模式", if (state.playing) yn(state.exclusive) else "—")
                         DspRow("欠载", "${state.underruns}")
                         DspRow(
                             "采样覆盖",
@@ -583,7 +585,13 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
             onClick = actions.applyEqEditor,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (state.playing) "应用（实时生效）" else "应用（下次播放生效）")
+            Text(
+                if (state.playing || state.dmrRunning) {
+                    "应用（实时生效）"
+                } else {
+                    "应用（下次播放生效）"
+                },
+            )
         }
 
         Spacer(Modifier.height(8.dp))

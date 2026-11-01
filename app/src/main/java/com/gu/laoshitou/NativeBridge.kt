@@ -3,6 +3,8 @@
 
 package com.gu.laoshitou
 
+import android.media.MediaDataSource
+
 object NativeBridge {
     init {
         System.loadLibrary("hifiplayer")
@@ -19,7 +21,6 @@ object NativeBridge {
     external fun stopTestTone()
     external fun isTestToneRunning(): Boolean
     external fun testToneActualRate(): Int
-    external fun testToneExclusive(): Boolean
     external fun testToneUnderruns(): Long
 
     external fun ffmpegVersion(): String
@@ -54,6 +55,48 @@ object NativeBridge {
         multibandThresholdDb: Double,
     ): Boolean
 
+    /**
+     * Starts the native pipeline from a random-access [MediaDataSource].
+     * Used by the DMR so received LAN streams run through FFmpeg -> DSP ->
+     * Oboe while the LAN-only URL policy stays in Kotlin.
+     */
+    external fun startSource(
+        dataSource: MediaDataSource,
+        processing: Boolean,
+        supportedRates: IntArray,
+        nativeRate: Int,
+        eqProfilePath: String,
+        crossfeed: Boolean,
+        eqCascade: Boolean,
+        eqUseSlope: Boolean,
+        eqSlope: Double,
+        forcedOutputRate: Int,
+        resamplerQuality: Int,
+        crossfeedWidth: Double,
+        stereoWidth: Double,
+        loudnessEnabled: Boolean,
+        loudnessVolume: Double,
+        limiterEnabled: Boolean,
+        limiterThresholdDb: Double,
+        usbDacDetected: Boolean,
+        autoUsb192k: Boolean,
+        brirPath: String,
+        brirEnabled: Boolean,
+        brirMix: Double,
+        eqLinearPhase: Boolean,
+        multibandEnabled: Boolean,
+        multibandLowHz: Double,
+        multibandHighHz: Double,
+        multibandThresholdDb: Double,
+    ): Boolean
+
+    external fun seekPlayback(positionMs: Long): Boolean
+    external fun playbackPositionMs(): Long
+    external fun playbackDurationMs(): Long
+    external fun playbackXruns(): Long
+    external fun playbackLatencyMs(): Double
+    external fun playbackLastError(): String
+
     external fun loadEqProfileForEditor(
         path: String,
         order: Int,
@@ -68,7 +111,6 @@ object NativeBridge {
     external fun playbackCrossFamily(): Boolean
     external fun playbackNonInteger(): Boolean
     external fun playbackDeviceLimited(): Boolean
-    external fun playbackExclusive(): Boolean
     external fun playbackUnderruns(): Long
     external fun playbackEnded(): Boolean
     external fun playbackNeedsRecovery(): Boolean

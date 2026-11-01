@@ -32,15 +32,16 @@ class OboeOutput final : public oboe::AudioStreamDataCallback,
   OboeOutput(const OboeOutput&) = delete;
   OboeOutput& operator=(const OboeOutput&) = delete;
 
-  // Requests Exclusive + LowLatency + Float. Returns false if the stream could
-  // not be opened with a float format and the requested channel count.
+  // Requests LowLatency + Float on a shared stream. Returns false if the
+  // stream could not be opened with a float format and the requested channel
+  // count.
   bool open(int requested_sample_rate, int channels);
 
   // Must be called before start(). The ring must outlive the stream.
   void set_ring(dsp::AudioRingBuffer* ring) noexcept;
 
   // Must be called before start(). The chain must outlive the stream. Pass
-  // nullptr for Direct mode (bit-perfect bypass).
+  // nullptr for Direct mode (DSP bypass).
   void set_dsp_chain(dsp::DspChain* chain) noexcept;
 
   bool start();
@@ -61,10 +62,11 @@ class OboeOutput final : public oboe::AudioStreamDataCallback,
   // (device change, USB unplug, Bluetooth route change, ...). The owner must
   // reopen the stream from a control thread.
   [[nodiscard]] bool is_disconnected() const noexcept;
-  [[nodiscard]] bool is_exclusive() const noexcept;
   [[nodiscard]] int actual_sample_rate() const noexcept;
   [[nodiscard]] int actual_channels() const noexcept;
   [[nodiscard]] int32_t xrun_count() const noexcept;
+  // Oboe's stream latency estimate (control-thread call, not the RT callback).
+  [[nodiscard]] double latency_ms();
   [[nodiscard]] int64_t underrun_count() const noexcept;
 
   oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream, void* audio_data,
@@ -78,7 +80,6 @@ class OboeOutput final : public oboe::AudioStreamDataCallback,
   std::atomic<float> target_gain_{1.0f};
   std::atomic<int> channels_{0};
   std::atomic<int> actual_sample_rate_{0};
-  std::atomic<bool> exclusive_{false};
   std::atomic<int64_t> underruns_{0};
   std::atomic<bool> disconnected_{false};
   std::atomic<bool> silence_expected_{false};

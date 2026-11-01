@@ -25,7 +25,10 @@ bool OboeOutput::open(int requested_sample_rate, int channels) {
 
   oboe::AudioStreamBuilder builder;
   builder.setDirection(oboe::Direction::Output);
-  builder.setSharingMode(oboe::SharingMode::Exclusive);
+  // Shared output only. Exclusive mode was removed because it was never
+  // reliably granted on the target devices; the system mixer always has the
+  // final say, so requesting it only added reopen churn on every route.
+  builder.setSharingMode(oboe::SharingMode::Shared);
   builder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
   builder.setFormat(oboe::AudioFormat::Float);
   builder.setFormatConversionAllowed(false);
@@ -47,10 +50,8 @@ bool OboeOutput::open(int requested_sample_rate, int channels) {
   const oboe::AudioFormat format = stream_->getFormat();
   const int actual_channels = stream_->getChannelCount();
   const int actual_rate = stream_->getSampleRate();
-  const oboe::SharingMode sharing = stream_->getSharingMode();
 
-  __android_log_print(ANDROID_LOG_INFO, kLogTag, "opened: sharing=%s format=%d rate=%d channels=%d",
-                      sharing == oboe::SharingMode::Exclusive ? "exclusive" : "shared",
+  __android_log_print(ANDROID_LOG_INFO, kLogTag, "opened: format=%d rate=%d channels=%d",
                       static_cast<int>(format), actual_rate, actual_channels);
 
   if (format != oboe::AudioFormat::Float || actual_channels != channels) {
@@ -63,7 +64,6 @@ bool OboeOutput::open(int requested_sample_rate, int channels) {
 
   channels_.store(actual_channels, std::memory_order_relaxed);
   actual_sample_rate_.store(actual_rate, std::memory_order_relaxed);
-  exclusive_.store(sharing == oboe::SharingMode::Exclusive, std::memory_order_relaxed);
   disconnected_.store(false, std::memory_order_relaxed);
   silence_expected_.store(false, std::memory_order_relaxed);
   paused_.store(false, std::memory_order_relaxed);
@@ -102,7 +102,6 @@ void OboeOutput::stop() {
     stream_.reset();
   }
   channels_.store(0, std::memory_order_relaxed);
-  exclusive_.store(false, std::memory_order_relaxed);
   disconnected_.store(false, std::memory_order_relaxed);
   silence_expected_.store(false, std::memory_order_relaxed);
   paused_.store(false, std::memory_order_relaxed);
@@ -126,10 +125,6 @@ bool OboeOutput::is_disconnected() const noexcept {
   return disconnected_.load(std::memory_order_relaxed);
 }
 
-bool OboeOutput::is_exclusive() const noexcept {
-  return exclusive_.load(std::memory_order_relaxed);
-}
-
 int OboeOutput::actual_sample_rate() const noexcept {
   return actual_sample_rate_.load(std::memory_order_relaxed);
 }
@@ -144,6 +139,14 @@ int32_t OboeOutput::xrun_count() const noexcept {
   }
   const oboe::ResultWithValue<int32_t> result = stream_->getXRunCount();
   return result.error() == oboe::Result::OK ? result.value() : 0;
+}
+
+double OboeOutput::latency_ms() {
+  if (!stream_) {
+    return 0.0;
+  }
+  const oboe::ResultWithValue<double> result = stream_->calculateLatencyMillis();
+  return result.error() == oboe::Result::OK ? result.value() : 0.0;
 }
 
 int64_t OboeOutput::underrun_count() const noexcept {

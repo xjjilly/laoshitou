@@ -18,6 +18,7 @@ import android.os.Process
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -33,6 +34,11 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.gu.laoshitou.ui.DlnaController
+import com.gu.laoshitou.ui.DlnaRole
+import com.gu.laoshitou.ui.DlnaScreen
+import com.gu.laoshitou.ui.LanSessionController
+import com.gu.laoshitou.ui.RolePromptDialog
 import com.gu.laoshitou.ui.HifiDashboardScreen
 import com.gu.laoshitou.ui.ImmersivePlayerScreen
 import com.gu.laoshitou.ui.MinimalPlayerScreen
@@ -161,6 +167,23 @@ private fun AppRoot() {
             multibandThresholdDb = settings.getFloat("multiband_threshold_db", -12f).toDouble()
             userPresets = parseUserPresets(settings.getString("user_presets", null))
         }
+    }
+    val dlnaController = remember { DlnaController(context) }
+    val lanSession = remember { LanSessionController(context) }
+    LaunchedEffect(dlnaController.dmrRunning) {
+        state.dmrRunning = dlnaController.dmrRunning
+    }
+    DisposableEffect(Unit) {
+        lanSession.start()
+        onDispose {
+            lanSession.stop()
+            dlnaController.release()
+        }
+    }
+    LaunchedEffect(lanSession.sessionKey) {
+        // A new LAN session invalidates the previous role and services.
+        scope.launch { dlnaController.stopAll() }
+        dlnaController.role = DlnaRole.OFFLINE
     }
     val powerManager = remember { context.getSystemService(PowerManager::class.java) }
     val audioManager = remember { context.getSystemService(AudioManager::class.java) }
@@ -338,15 +361,20 @@ private fun AppRoot() {
                 .putFloat("eq_editor_preamp", state.eqEditorPreamp.toFloat())
                 .putBoolean("use_visual_eq", true)
                 .apply()
-            // Live update while playing: the native chain rebuilds the biquads
-            // in place (or hot-swaps the FIR kernel) without touching the
-            // audio callback.
-            val appliedLive = state.playing && withContext(Dispatchers.Default) {
-                NativeBridge.updateEq(
+            // Live update while local playback OR DMR reception is running:
+            // the native chain rebuilds the biquads in place (or hot-swaps the
+            // FIR kernel) without touching the audio callback.
+            val dmrRunning = dlnaController.dmrRunning
+            val appliedLive = (state.playing || dmrRunning) && withContext(Dispatchers.Default) {
+                val applied = NativeBridge.updateEq(
                     state.eqEditorGains.toFloatArray(),
                     EqEditorFrequencies.map { it.toFloat() }.toFloatArray(),
                     state.eqEditorPreamp,
                 )
+                if (applied && dmrRunning) {
+                    Log.i("LaoshiTou", "16 段视觉 EQ 已实时应用到 DMR")
+                }
+                applied
             }
             state.status = if (appliedLive) {
                 "已实时应用 16 段 EQ"
@@ -1185,6 +1213,7 @@ private fun AppRoot() {
         setPlayMode = { state.playMode = it },
         setUiVersion = { state.uiVersion = it },
         setAboutOpen = { state.aboutOpen = it },
+        setDlnaOpen = { state.dlnaOpen = it },
         setFilePath = { state.filePath = it },
         setEqPath = { state.eqPath = it },
         refreshLibrary = ::refreshLibrary,
@@ -1259,8 +1288,7 @@ private fun AppRoot() {
                 state.thermalStatus = powerManager?.currentThermalStatus ?: 0
             }
             state.metrics = "实时：输出 ${state.outputRate} Hz，" +
-                "欠载 ${state.underruns}，" +
-                "独占 ${yesNo(state.exclusive)}" +
+                "欠载 ${state.underruns}" +
                 (if (state.paused) "，已暂停" else "") +
                 (if (state.ended) "，已结束" else "")
 
@@ -1281,7 +1309,26 @@ private fun AppRoot() {
         }
     }
 
-    if (state.aboutOpen) {
+    if (lanSession.rolePromptOpen) {
+        RolePromptDialog(
+            address = lanSession.address,
+            onSelected = { role ->
+                lanSession.markRoleChosen()
+                scope.launch { dlnaController.selectRole(role) }
+                if (role != DlnaRole.OFFLINE) {
+                    state.dlnaOpen = true
+                }
+            },
+        )
+    }
+
+    if (state.dlnaOpen) {
+        DlnaScreen(
+            controller = dlnaController,
+            playerState = state,
+            onClose = { state.dlnaOpen = false },
+        )
+    } else if (state.aboutOpen) {
         AboutScreen(
             versionName = versionName,
             onClose = { state.aboutOpen = false },
@@ -1444,7 +1491,6 @@ private fun refreshMetrics(state: PlayerState) {
     state.sourceRate = NativeBridge.playbackSourceRate()
     state.targetRate = NativeBridge.playbackTargetRate()
     state.outputRate = NativeBridge.playbackActualRate()
-    state.exclusive = NativeBridge.playbackExclusive()
     state.crossFamily = NativeBridge.playbackCrossFamily()
     state.nonInteger = NativeBridge.playbackNonInteger()
     state.deviceLimited = NativeBridge.playbackDeviceLimited()
