@@ -25,6 +25,12 @@ import com.gu.laoshitou.dlna.MediaPlayerBackend
 import com.gu.laoshitou.dlna.MediaProtocolInfo
 import com.gu.laoshitou.dlna.MusicLibraryDmsLibrary
 import com.gu.laoshitou.dlna.NetworkAddresses
+import com.gu.laoshitou.media.LocalFileResource
+import com.gu.laoshitou.media.MediaResource
+import com.gu.laoshitou.nas.WebDavClient
+import com.gu.laoshitou.nas.WebDavCredentialStore
+import com.gu.laoshitou.nas.WebDavEntry
+import com.gu.laoshitou.nas.WebDavResource
 import java.io.File
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
@@ -101,7 +107,9 @@ class DlnaController(private val context: Context) {
     private val dmcClient = DmcClient(context.applicationContext)
     private val dmcScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var castPollJob: Job? = null
-    private var pendingCast: Pair<File, String>? = null
+    private data class PendingCast(val resource: MediaResource, val title: String)
+    private var pendingCast: PendingCast? = null
+    private var castClient: WebDavClient? = null
     private val mediaSession = DlnaMediaSession.getOrCreate(appContext)
 
     private val wifiManager = appContext.getSystemService(WifiManager::class.java)
@@ -382,6 +390,10 @@ class DlnaController(private val context: Context) {
     }
 
     suspend fun castTrack(file: File, title: String, force: Boolean = false) {
+        castTrack(LocalFileResource(file), title, force)
+    }
+
+    suspend fun castTrack(resource: MediaResource, title: String, force: Boolean = false) {
         if (!dmcEnabled) {
             dmcError = "投送端已关闭，请在发送者面板打开 DMC"
             return
@@ -395,7 +407,7 @@ class DlnaController(private val context: Context) {
             return
         }
         if (!force) {
-            val mime = MediaProtocolInfo.forFileName(file.name)?.mime
+            val mime = MediaProtocolInfo.forFileName(resource.name)?.mime ?: resource.mime
             val sink = withContext(Dispatchers.IO) {
                 runCatching { dmcClient.getSinkProtocolInfo(renderer) }.getOrNull()
             }
@@ -404,17 +416,61 @@ class DlnaController(private val context: Context) {
             if (mime != null && sinkText.isNotEmpty() &&
                 !dmcClient.sinkSupportsMime(sinkText, mime)
             ) {
-                pendingCast = file to title
+                pendingCast = PendingCast(resource, title)
+                val extension = resource.name.substringAfterLast('.', resource.name).uppercase()
                 dmcFormatWarning =
-                    "该设备未声明支持 ${file.extension.uppercase()}（$mime），可能无法播放。"
+                    "该设备未声明支持 $extension（$mime），可能无法播放。"
                 return
             }
         }
-        doCast(renderer, dms, file, title)
+        doCast(renderer, dms, resource, title)
+    }
+
+    /**
+     * Casts one WebDAV entry to the selected renderer. The controller owns the
+     * NAS client for the lifetime of the cast, so closing the NAS screen does
+     * not close the stream under the renderer.
+     *
+     * Returns null on success or a user-facing error message.
+     */
+    suspend fun castNasEntry(entry: WebDavEntry): String? {
+        if (!entry.isAudio) {
+            return "只能投送音频文件"
+        }
+        if (!entry.playbackSupported) {
+            return "该格式暂不支持播放"
+        }
+        if (entry.size == null) {
+            return "服务器未提供文件大小，无法投送"
+        }
+        val saved = withContext(Dispatchers.IO) {
+            WebDavCredentialStore(appContext).load()
+        } ?: return "NAS 凭据不存在，请先在 NAS 页面连接"
+        if (!entry.url.host.equals(saved.account.baseUrl.host, ignoreCase = true) ||
+            entry.url.port != saved.account.baseUrl.port ||
+            entry.url.scheme != saved.account.baseUrl.scheme
+        ) {
+            return "NAS 地址与保存的凭据不一致，请重新连接"
+        }
+        if (casting) {
+            stopCast()
+        }
+        closeCastClient()
+        val client = WebDavClient(saved.account, saved.password, saved.authType)
+        castClient = client
+        val resource = WebDavResource(client, entry)
+        castTrack(resource, entry.name.substringBeforeLast('.', entry.name))
+        return if (casting || dmcFormatWarning != null) {
+            null
+        } else {
+            val message = dmcError ?: "投送失败"
+            closeCastClient()
+            message
+        }
     }
 
     suspend fun confirmCastAnyway() {
-        val (file, title) = pendingCast ?: return
+        val pending = pendingCast ?: return
         pendingCast = null
         dmcFormatWarning = null
         val renderer = selectedRenderer ?: return
@@ -422,22 +478,28 @@ class DlnaController(private val context: Context) {
             dmcError = "曲库共享已停止"
             return
         }
-        doCast(renderer, dms, file, title)
+        doCast(renderer, dms, pending.resource, pending.title)
     }
 
     fun dismissFormatWarning() {
         pendingCast = null
         dmcFormatWarning = null
+        closeCastClient()
+    }
+
+    private fun closeCastClient() {
+        castClient?.close()
+        castClient = null
     }
 
     private suspend fun doCast(
         renderer: DmcClient.Renderer,
         dms: DmsDevice,
-        file: File,
+        resource: MediaResource,
         title: String,
     ) {
-        val url = dms.mediaUrl(file) ?: run {
-            dmcError = "无法生成本地媒体 URL"
+        val url = dms.mediaUrl(resource) ?: run {
+            dmcError = "无法生成媒体 URL"
             return
         }
         if (casting) {
@@ -447,12 +509,13 @@ class DlnaController(private val context: Context) {
         try {
             NativeBridge.stopPlayback()
             context.stopService(Intent(context, PlaybackService::class.java))
-            val metadata = MediaProtocolInfo.forFileName(file.name)?.mime?.let { mime ->
+            val mime = MediaProtocolInfo.forFileName(resource.name)?.mime ?: resource.mime
+            val metadata = mime?.let {
                 DmcClient.buildDidlMetadata(
                     title = title,
                     mediaUrl = url,
-                    mime = mime,
-                    sizeBytes = file.length(),
+                    mime = it,
+                    sizeBytes = resource.length,
                 )
             }
             val set = withContext(Dispatchers.IO) {
@@ -513,6 +576,7 @@ class DlnaController(private val context: Context) {
                 runCatching { dmcClient.stop(renderer) }
             }
         }
+        closeCastClient()
     }
 
     suspend fun seekCast(positionMs: Long) {
@@ -595,6 +659,7 @@ class DlnaController(private val context: Context) {
     fun release() {
         castPollJob?.cancel()
         castPollJob = null
+        closeCastClient()
         val castingRenderer = if (casting) selectedRenderer else null
         if (castingRenderer != null) {
             thread(name = "dmc-release", isDaemon = true) {

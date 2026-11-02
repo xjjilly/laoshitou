@@ -185,11 +185,12 @@ internal class DmsContentDirectory(
         track.album?.takeIf { it.isNotBlank() }?.let {
             append("<upnp:album>").append(escapeXml(it)).append("</upnp:album>")
         }
-        val info = MediaProtocolInfo.forFileName(track.file.name)
+        val info = MediaProtocolInfo.forFileName(track.resource.name)
+        val mime = info?.mime ?: track.resource.mime ?: "application/octet-stream"
         val url = mediaUrl(track, info)
         if (url != null) {
-            append("<res protocolInfo=\"").append(protocolInfo(info)).append('"')
-            append(" size=\"").append(track.file.length()).append('"')
+            append("<res protocolInfo=\"").append(protocolInfo(info, mime)).append('"')
+            append(" size=\"").append(track.resource.length).append('"')
             append('>').append(escapeXml(url)).append("</res>")
         }
         append("</item>")
@@ -198,12 +199,15 @@ internal class DmsContentDirectory(
     private fun mediaUrl(track: DmsTrack, info: MediaProtocolInfo.Info?): String? {
         val base = urlBaseProvider()?.trimEnd('/') ?: return null
         val token = tokenStore.tokenFor(track)
-        val fileName = MediaProtocolInfo.mediaFileName(track.id, track.file.name, info?.mime)
+        val fileName = MediaProtocolInfo.mediaFileName(
+            track.id,
+            track.resource.name,
+            info?.mime ?: track.resource.mime,
+        )
         return "$base${DmsMediaEndpoint.PREFIX}$token/$fileName"
     }
 
-    private fun protocolInfo(info: MediaProtocolInfo.Info?): String {
-        val mime = info?.mime ?: "application/octet-stream"
+    private fun protocolInfo(info: MediaProtocolInfo.Info?, mime: String): String {
         return buildString {
             append("http-get:*:").append(mime).append(':')
             info?.dlnaPn?.let { append("DLNA.ORG_PN=").append(it).append(';') }

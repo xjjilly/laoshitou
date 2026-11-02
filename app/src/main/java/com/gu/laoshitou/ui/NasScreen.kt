@@ -62,7 +62,10 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 
 @Composable
-fun NasScreen(onClose: () -> Unit) {
+fun NasScreen(
+    onClose: () -> Unit,
+    onCast: (suspend (WebDavEntry) -> String?)? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { WebDavCredentialStore(context) }
@@ -167,6 +170,19 @@ fun NasScreen(onClose: () -> Unit) {
         }
         val target = crumbs[index]
         scope.launch { loadDirectory(target.url, crumbs.take(index + 1)) }
+    }
+
+    fun castEntry(entry: WebDavEntry) {
+        val action = onCast ?: return
+        scope.launch {
+            val message = action(entry)
+            if (message == null) {
+                error = null
+                status = "已投送：${entry.name}"
+            } else {
+                error = message
+            }
+        }
     }
 
     BackHandler {
@@ -335,7 +351,17 @@ fun NasScreen(onClose: () -> Unit) {
                             if (index > 0) {
                                 HorizontalDivider(color = HifiMuted.copy(alpha = 0.15f))
                             }
-                            EntryRow(entry = entry, onClick = { openFolder(entry) })
+                            EntryRow(
+                                entry = entry,
+                                onClick = { openFolder(entry) },
+                                onCast = if (onCast != null && !entry.isCollection &&
+                                    entry.isAudio && entry.playbackSupported
+                                ) {
+                                    { castEntry(entry) }
+                                } else {
+                                    null
+                                },
+                            )
                         }
                         if (entries.size >= NasRepository.MAX_VISIBLE_ENTRIES) {
                             Spacer(Modifier.height(6.dp))
@@ -360,7 +386,11 @@ fun NasScreen(onClose: () -> Unit) {
 }
 
 @Composable
-private fun EntryRow(entry: WebDavEntry, onClick: () -> Unit) {
+private fun EntryRow(
+    entry: WebDavEntry,
+    onClick: () -> Unit,
+    onCast: (() -> Unit)? = null,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -388,6 +418,11 @@ private fun EntryRow(entry: WebDavEntry, onClick: () -> Unit) {
                     style = MaterialTheme.typography.labelSmall,
                     color = HifiMuted,
                 )
+            }
+        }
+        if (onCast != null) {
+            TextButton(onClick = onCast) {
+                Text("投送")
             }
         }
         if (entry.isCollection) {

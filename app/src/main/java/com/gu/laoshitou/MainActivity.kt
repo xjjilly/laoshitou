@@ -1335,7 +1335,10 @@ private fun AppRoot() {
     }
 
     if (state.nasOpen) {
-        NasScreen(onClose = { state.nasOpen = false })
+        NasScreen(
+            onClose = { state.nasOpen = false },
+            onCast = { entry -> dlnaController.castNasEntry(entry) },
+        )
     } else if (state.dlnaOpen) {
         DlnaScreen(
             controller = dlnaController,

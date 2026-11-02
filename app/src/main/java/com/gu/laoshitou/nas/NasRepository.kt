@@ -3,6 +3,8 @@
 
 package com.gu.laoshitou.nas
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl
 
 /**
@@ -10,6 +12,9 @@ import okhttp3.HttpUrl
  * folder view; it does not persist or mirror the remote tree.
  */
 class NasRepository {
+    private val connectMutex = Mutex()
+
+    @Volatile
     private var client: WebDavClient? = null
 
     val connected: Boolean
@@ -19,12 +24,12 @@ class NasRepository {
         account: WebDavAccount,
         password: String,
         authType: WebDavAuthType,
-    ): WebDavEntry {
+    ): WebDavEntry = connectMutex.withLock {
         disconnect()
         val newClient = WebDavClient(account, password, authType)
-        return try {
+        try {
             val root = newClient.testConnection()
-            client = newClient
+            synchronized(this) { client = newClient }
             root
         } catch (e: Exception) {
             newClient.close()
@@ -33,10 +38,11 @@ class NasRepository {
     }
 
     suspend fun list(url: HttpUrl): List<WebDavEntry> {
-        val active = client ?: throw WebDavException("尚未连接 NAS")
+        val active = synchronized(this) { client } ?: throw WebDavException("尚未连接 NAS")
         return active.list(url)
     }
 
+    @Synchronized
     fun disconnect() {
         client?.close()
         client = null

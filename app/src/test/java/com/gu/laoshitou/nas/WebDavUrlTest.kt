@@ -34,6 +34,13 @@ class WebDavUrlTest {
         assertEquals("/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/", url.encodedPath)
     }
 
+    @Test
+    fun allowsAtSignInPath() {
+        val url = WebDavUrl.parseBase("http://192.168.1.10:9005/music@home/")
+        assertEquals("192.168.1.10", url.host)
+        assertEquals(9005, url.port)
+    }
+
     @Test(expected = WebDavUrlException::class)
     fun rejectsCrossHostHref() {
         val base = WebDavUrl.parseBase("http://192.168.1.10:9005/")

@@ -5,6 +5,8 @@ package com.gu.laoshitou.dlna
 
 import android.content.Context
 import android.util.Log
+import com.gu.laoshitou.media.LocalFileResource
+import com.gu.laoshitou.media.MediaResource
 import org.cybergarage.http.HTTPRequest
 import org.cybergarage.net.HostInterface
 import org.cybergarage.upnp.Device
@@ -13,6 +15,7 @@ import org.cybergarage.upnp.device.InvalidDescriptionException
 import org.cybergarage.upnp.std.av.server.ConnectionManager
 import org.cybergarage.upnp.std.av.server.ContentDirectory
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * MediaServer:1 device with a custom description and a token/Range media
@@ -27,6 +30,7 @@ internal class DmsDevice(
     private val appContext = context.applicationContext
     private val udn = DlnaUdn.forRole(appContext, "dms")
     private val tokenStore = MediaTokenStore()
+    private val castSequence = AtomicLong()
 
     private var mediaEndpoint: DmsMediaEndpoint? = null
     private var contentDirectory: DmsContentDirectory? = null
@@ -121,22 +125,30 @@ internal class DmsDevice(
      * running so the renderer can pull the file from this phone.
      */
     @Synchronized
-    fun mediaUrl(file: File): String? {
-        if (!started || !file.isFile) {
+    fun mediaUrl(file: File): String? = mediaUrl(LocalFileResource(file))
+
+    /**
+     * Returns a token URL for any [MediaResource]. The renderer only sees this
+     * phone's DMS URL, so WebDAV credentials never leave the device.
+     */
+    @Synchronized
+    fun mediaUrl(resource: MediaResource): String? {
+        if (!started || resource.length <= 0L) {
             return null
         }
         val host = boundAddress ?: return null
-        val info = MediaProtocolInfo.forFileName(file.name)
+        val info = MediaProtocolInfo.forFileName(resource.name)
+        val mime = info?.mime ?: resource.mime
         val track = DmsTrack(
-            id = "cast:${file.absolutePath}",
-            title = file.nameWithoutExtension,
+            id = "cast-${castSequence.incrementAndGet()}",
+            title = resource.name.substringBeforeLast('.', resource.name),
             artist = null,
             albumId = "",
             album = null,
-            file = file,
+            resource = resource,
         )
         val token = tokenStore.tokenFor(track)
-        val fileName = MediaProtocolInfo.mediaFileName("cast", file.name, info?.mime)
+        val fileName = MediaProtocolInfo.mediaFileName(track.id, resource.name, mime)
         return "http://$host:$httpPort${DmsMediaEndpoint.PREFIX}$token/$fileName"
     }
 

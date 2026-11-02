@@ -7,7 +7,6 @@ import android.util.Log
 import org.cybergarage.http.HTTPRequest
 import org.cybergarage.http.HTTPResponse
 import org.cybergarage.http.HTTPStatus
-import java.io.FileInputStream
 import java.io.IOException
 
 /**
@@ -41,13 +40,15 @@ internal class DmsMediaEndpoint(
             reject(request, HTTPStatus.BAD_REQUEST)
             return true
         }
-        val file = track.file
-        if (!file.isFile || file.length() <= 0L) {
+        val resource = track.resource
+        val total = resource.length
+        if (total <= 0L) {
             reject(request, HTTPStatus.BAD_REQUEST)
             return true
         }
 
-        val info = MediaProtocolInfo.forFileName(file.name)
+        val info = MediaProtocolInfo.forFileName(resource.name)
+        val mime = info?.mime ?: resource.mime ?: "application/octet-stream"
 
         // CyberLink's getContentRange() expects "bytes start-end/total" with
         // spaces; a standard "bytes=start-end" Range header is parsed as 0-0
@@ -55,26 +56,26 @@ internal class DmsMediaEndpoint(
         // form its single-range engine understands before calling post().
         val rangeHeader = request.getHeaderValue("Range")
         if (rangeHeader.isNotBlank()) {
-            val range = parseRange(rangeHeader, file.length())
+            val range = parseRange(rangeHeader, total)
             if (range == null) {
                 // Clear the malformed Range header first; CyberLink's post()
                 // would otherwise re-apply its broken 0-0 interpretation.
                 request.clearHeaders()
                 return request.returnResponse(HTTPStatus.INVALID_RANGE)
             }
-            request.setHeader("Range", "bytes ${range.first}-${range.last}/${file.length()}")
-            Log.i(TAG, "DMS Range: ${range.first}-${range.last}/${file.length()}")
+            request.setHeader("Range", "bytes ${range.first}-${range.last}/$total")
+            Log.i(TAG, "DMS Range: ${range.first}-${range.last}/$total ${resource.name}")
         }
 
         val response = HTTPResponse()
         response.setStatusCode(HTTPStatus.OK)
-        response.setContentType(info?.mime ?: "application/octet-stream")
-        response.setContentLength(file.length())
+        response.setContentType(mime)
+        response.setContentLength(total)
         response.setHeader("Accept-Ranges", "bytes")
         response.setHeader("transferMode.dlna.org", "Streaming")
         response.setHeader("contentFeatures.dlna.org", dlnaFeatures(info))
 
-        val input = FileInputStream(file)
+        val input = resource.openStream()
         response.setContentInputStream(input)
         return try {
             request.post(response)

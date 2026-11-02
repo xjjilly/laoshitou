@@ -3,7 +3,7 @@
 
 package com.gu.laoshitou.dlna
 
-import java.io.File
+import com.gu.laoshitou.media.MediaResource
 
 internal data class DmsAlbum(
     val id: String,
@@ -16,7 +16,7 @@ internal data class DmsTrack(
     val artist: String?,
     val albumId: String,
     val album: String?,
-    val file: File,
+    val resource: MediaResource,
 )
 
 /**

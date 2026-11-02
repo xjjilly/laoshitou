@@ -4,18 +4,26 @@
 package com.gu.laoshitou.nas
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.Base64
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class WebDavException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -50,17 +58,71 @@ class WebDavClient(
     }
 
     fun close() {
+        client.dispatcher.cancelAll()
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
     }
 
-    private fun propfind(start: HttpUrl, depth: Int): List<WebDavEntry> {
+    /**
+     * Opens a GET response for the given range. The caller owns the returned
+     * response and must close it. This is blocking and is meant for the DMS
+     * media endpoint thread, not for coroutines.
+     */
+    internal fun openRange(url: HttpUrl, start: Long, endInclusive: Long?): Response {
+        val range = if (endInclusive == null) {
+            "bytes=$start-"
+        } else {
+            "bytes=$start-$endInclusive"
+        }
+        val request = buildGetRequest(url).newBuilder().header("Range", range).build()
+        return try {
+            client.newCall(request).execute()
+        } catch (e: IOException) {
+            throw mapNetworkError(e)
+        }
+    }
+
+    private fun buildGetRequest(url: HttpUrl): Request {
+        val builder = Request.Builder()
+            .url(url)
+            .get()
+            .header("Accept", "*/*")
+            .header("User-Agent", USER_AGENT)
+        if (authType != WebDavAuthType.DIGEST) {
+            builder.header("Authorization", basicHeader(account.username, password))
+        }
+        return builder.build()
+    }
+
+    private suspend fun execute(request: Request): Response =
+        suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(e)
+                    }
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (continuation.isActive) {
+                        continuation.resume(response)
+                    } else {
+                        response.close()
+                    }
+                }
+            })
+        }
+
+    private suspend fun propfind(start: HttpUrl, depth: Int): List<WebDavEntry> {
         var current = start
         var redirects = 0
         while (true) {
             val response = try {
-                client.newCall(buildRequest(current, depth)).execute()
+                execute(buildRequest(current, depth))
             } catch (e: IOException) {
+                currentCoroutineContext().ensureActive()
                 throw mapNetworkError(e)
             }
             var next: HttpUrl? = null
@@ -89,6 +151,7 @@ class WebDavClient(
                         val body = try {
                             response.body?.string().orEmpty()
                         } catch (e: IOException) {
+                            currentCoroutineContext().ensureActive()
                             throw mapNetworkError(e)
                         }
                         if (body.isBlank()) {

@@ -3,6 +3,7 @@
 
 package com.gu.laoshitou.dlna
 
+import com.gu.laoshitou.media.LocalFileResource
 import com.gu.laoshitou.scanMusicLibrary
 import java.io.File
 
@@ -35,7 +36,7 @@ internal class MusicLibraryDmsLibrary(root: File) : DmsLibrary {
                     artist = null,
                     albumId = album.id,
                     album = folder.name,
-                    file = file,
+                    resource = LocalFileResource(file),
                 )
             }
             tracksByAlbum[album.id] = tracks

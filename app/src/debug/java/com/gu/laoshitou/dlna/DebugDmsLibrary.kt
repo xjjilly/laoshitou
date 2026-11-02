@@ -4,6 +4,7 @@
 package com.gu.laoshitou.dlna
 
 import android.content.Context
+import com.gu.laoshitou.media.LocalFileResource
 import java.io.File
 
 /** Debug-only DMS library with one generated album/track. */
@@ -24,7 +25,7 @@ internal class DebugDmsLibrary(context: Context) : DmsLibrary {
             artist = null,
             albumId = album.id,
             album = album.title,
-            file = file,
+            resource = LocalFileResource(file),
         )
     }
 
