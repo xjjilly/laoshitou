@@ -54,10 +54,14 @@ class DmcClient(private val context: Context) {
         return result.values.toList()
     }
 
-    fun setAvTransportUri(renderer: Renderer, mediaUrl: String): SoapResponse {
+    fun setAvTransportUri(
+        renderer: Renderer,
+        mediaUrl: String,
+        metadataXml: String? = null,
+    ): SoapResponse {
         val args = "<InstanceID>0</InstanceID>" +
             "<CurrentURI>${escapeXml(mediaUrl)}</CurrentURI>" +
-            "<CurrentURIMetaData></CurrentURIMetaData>"
+            "<CurrentURIMetaData>${escapeXml(metadataXml.orEmpty())}</CurrentURIMetaData>"
         return soap(renderer.avControlUrl, AVT_SERVICE_TYPE, "SetAVTransportURI", args)
     }
 
@@ -232,25 +236,56 @@ class DmcClient(private val context: Context) {
         }
     }
 
-    private fun escapeXml(value: String): String = buildString(value.length) {
-        for (character in value) {
-            when (character) {
-                '&' -> append("&amp;")
-                '<' -> append("&lt;")
-                '>' -> append("&gt;")
-                '"' -> append("&quot;")
-                '\'' -> append("&apos;")
-                else -> append(character)
-            }
-        }
-    }
-
     companion object {
         private const val TAG = "M0Dlna"
         private const val AVT_SERVICE_TYPE = "urn:schemas-upnp-org:service:AVTransport:1"
         private const val RC_SERVICE_TYPE = "urn:schemas-upnp-org:service:RenderingControl:1"
         private const val CM_SERVICE_TYPE = "urn:schemas-upnp-org:service:ConnectionManager:1"
         private const val MAX_DESCRIPTION_BYTES = 1_048_576
+        private const val DIDL_HEADER =
+            "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
+                "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
+                "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">"
+
+        /**
+         * Builds the DIDL-Lite item that control points send as
+         * `CurrentURIMetaData`. Many third-party renderers (TVs, AVRs,
+         * BubbleUPnP, Windows Media Player) use the title and `res`
+         * protocolInfo instead of guessing from the URL, so metadata is part
+         * of the interop surface even though Kodi accepts an empty value.
+         */
+        fun buildDidlMetadata(
+            title: String,
+            mediaUrl: String,
+            mime: String,
+            sizeBytes: Long? = null,
+        ): String = buildString {
+            append(DIDL_HEADER)
+            append("<item id=\"0\" parentID=\"-1\" restricted=\"1\">")
+            append("<dc:title>").append(escapeXml(title)).append("</dc:title>")
+            append("<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
+            append("<res protocolInfo=\"http-get:*:")
+            append(escapeXml(mime))
+            append(":*\"")
+            if (sizeBytes != null && sizeBytes > 0) {
+                append(" size=\"").append(sizeBytes).append("\"")
+            }
+            append(">").append(escapeXml(mediaUrl)).append("</res>")
+            append("</item></DIDL-Lite>")
+        }
+
+        private fun escapeXml(value: String): String = buildString(value.length) {
+            for (character in value) {
+                when (character) {
+                    '&' -> append("&amp;")
+                    '<' -> append("&lt;")
+                    '>' -> append("&gt;")
+                    '"' -> append("&quot;")
+                    '\'' -> append("&apos;")
+                    else -> append(character)
+                }
+            }
+        }
 
         fun extractTag(xml: String, name: String): String? {
             val match = Regex("<$name>(.*?)</$name>", RegexOption.DOT_MATCHES_ALL).find(xml)

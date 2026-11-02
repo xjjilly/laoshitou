@@ -138,7 +138,8 @@ Two playback modes:
       sync; DFF (DSDIFF) is not accepted by DMR (local playback still supports
       DFF). DSD playback is CPU-heavy (~80% of one core on the test phone) —
       that is the compute-for-quality trade-off; lower the resampler quality
-      or use Direct mode to reduce it. 第三方控制点/渲染器矩阵按用户要求不再考虑。
+      or use Direct mode to reduce it. 第三方渲染器（Kodi 21.3）已完成发现/投送/
+      暂停/Seek/音量/离线恢复首测；其余电视/音箱与控制点矩阵按设备补测。
       **小米/HyperOS 注意**：请把本应用的「省电策略」设为「无限制」
       （设置 → 应用信息 → 老石头 → 电量详情 → 省电策略 → 无限制）。
       否则息屏后系统会冻结后台应用并切断局域网连接，DMS 将无法被电视/音箱访问；

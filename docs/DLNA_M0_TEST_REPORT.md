@@ -336,7 +336,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 
 **后续（2026-11-01 深夜已补）**：真实 FLAC/DSF 投送、DSP 仪器验证、
 Visual EQ 同步已见 §2.23；DFF over DMR 仍不支持（本地播放器支持 DFF）；
-第三方矩阵按用户要求不再考虑。
+第三方渲染器首测见 §2.24（2026-11-02，Kodi 21.3 通过）。
 
 ### 2.22 M4：原生 DMR 30 分钟混合长跑（2026-11-01）
 
@@ -405,7 +405,58 @@ PSS/Java Heap/Native Heap；Oboe 延迟/underrun/XRuns 每 10 秒由
   `NativeBridge.updateEq`；`PlayerState.dmrRunning` 同步按钮文案。
 
 **结论/边界**：真实 FLAC/DSF 与 DSP 链路验证通过；DFF over DMR 不支持；
-第三方矩阵按用户要求不再考虑；听感确认留给用户。
+第三方渲染器首测见 §2.24；听感确认留给用户。
+
+### 2.24 M3/M4：第三方渲染器互操作首测（Kodi 21.3，2026-11-02）
+
+**环境**
+- 发送端：Mi 10 Pro（Android 13，`192.168.1.9`），老石头 v1.3 debug（DMS + DMC）。
+- 第三方渲染器：Kodi 21.3 Omega arm64（同一台 Mi 10 Pro，设置 → 服务 →
+  UPnP/DLNA → 开启 `Enable UPnP support` 与 `Allow remote control via UPnP`），
+  设备描述为 `Kodi (mi-10-pro)` @ `http://192.168.1.9:1808/`，含
+  AVTransport / ConnectionManager / RenderingControl。
+- 主机：`192.168.1.8`，用于 SSDP 探测与 SOAP 观测。
+
+**发现与投送**
+- 正式 UI「发现投送设备」：`SSDP 发现 18 台设备`、`DMC 候选 MediaRenderer: 2`、
+  `DMC 发现 Kodi (mi-10-pro)`；列表正确显示并自动选中。
+- 真实 FLAC（`BEYOND - Best of the Best` / `Amani`，130,874,260 B）：
+  `GetProtocolInfo`、`SetAVTransportURI`、`Play` 均 HTTP 200；Kodi
+  `GetTransportInfo=PLAYING`、`TrackDuration=00:04:48`；DMS 连续收到
+  `Range: 0-130874259/130874260` 等请求；Kodi `TrackURI` 为 DMS token URL
+  `http://192.168.1.9:39520/dlna/media/<token>/cast.flac`。
+
+**控制与恢复**
+- 暂停 → Kodi `PAUSED_PLAYBACK`；继续 → `PLAYING`。
+- 正式 UI Seek 滑杆 50% → Kodi `RelTime=00:02:26`（时长 4:48）。
+- 正式 UI 音量 70% → Kodi `GetVolume=71`。
+- 停止 → Kodi `STOPPED`。
+- `am force-stop org.xbmc.kodi` 后连续 3 次轮询失败：
+  `DMC 渲染器离线：连续 3 次轮询失败`，UI 显示「渲染器已离线…」。
+  Kodi 重新启动并恢复 UPnP 后，轮询自动恢复、离线提示清除
+  （按既有行为，不自动重投）。
+
+**DIDL-Lite 元数据加固**
+- 原实现 `CurrentURIMetaData` 为空串；Kodi 可接受，但电视/AVR/BubbleUPnP/
+  Windows Media Player 等常依赖标题与 `res@protocolInfo`。已改为发送标准
+  DIDL-Lite：`dc:title`、`upnp:class=object.item.audioItem.musicTrack`、
+  `res protocolInfo="http-get:*:<mime>:*"` 与 `size`。
+- 实测 Kodi `GetPositionInfo/TrackMetaData` 返回
+  `<dc:title>01 - BEYOND - Amani</dc:title>`；新增单元测试
+  `DidlMetadataTest` 3/3 通过（含 XML 转义与可选 size）。
+
+**环境注意（非应用缺陷）**
+1. MIUI 会冻结后台 Kodi；需把 Kodi「省电策略」设为「无限制」，否则
+   `1808` 端口无响应（与 DMS 后台冻结同源）。
+2. 用 `am force-stop` 强杀 Kodi 可能丢失尚未落盘的 UPnP 开关；正常退出
+   会话会保存。重测时需在 Kodi UI 再次确认两个开关为开启。
+3. Kodi 的 `GetProtocolInfo` Sink 为 `http-get:*:*:*` 通配，格式预检查不会
+   对 Kodi 产生告警；真实格式兼容性以实际播放结果为准。
+
+**结论**：第三方 DMR 首测（Kodi 21.3）通过——发现、描述解析、投送、
+暂停/继续、Seek、音量、停止、离线检测与恢复均正常。其余设备
+（BubbleUPnP、Windows「播放到」/WMP、电视/音箱）与控制点矩阵仍未覆盖，
+按设备继续补测。
 
 ## 3. 联调中发现并修复的问题
 

@@ -1,6 +1,6 @@
 # DLNA/UPnP 发送者与接收者方案（DMC + DMS + DMR）
 
-- 状态：已实现（M0-M4 真机验证中；第三方矩阵待设备）
+- 状态：已实现（M0-M4 真机验证；第三方渲染器首测 Kodi 21.3 通过，其余设备矩阵待补）
 - 日期：2026-11-01（v4：DMR 改用 MediaPlayer / DSP 旁路、CyberLink 选型、每次联网角色二选一；晚间已升级为 DMR 原生 DSP 管线，见下方更新）
 - 目标版本：v2.0（暂定）
 - 关联：`README.md` 的隐私声明、`PlaybackService`、`MusicLibrary`、`THIRD_PARTY_NOTICES.md`
@@ -401,7 +401,7 @@ UI：
 合计约 **20-31 个开发日**（不含真机采购与兼容性返工）。本地播放的 seek/position 仍是 README 未完成项，但**不再是 DLNA 的前置条件**，按独立需求排期。
 
 **M0 验收**：CyberLink 许可证与 Android 构建结论明确；在 Mi 10 Pro + 2 台真实渲染器上投送 WAV/FLAC 成功；MediaPlayer 经 `MediaDataSource` 播放局域网 Range 流并可 seek；Wireshark 无外网流量。
-**M1 验收**：设备列表 5 秒内出现；连续投送 10 首不崩溃；渲染器断电有明确提示且可回退本地。当前正式 DMC 已在本方 DMR 上验证发现/投送/暂停/停止/进度；第三方渲染器矩阵、Seek/音量 UI 操作与错误恢复仍待补。
+**M1 验收**：设备列表 5 秒内出现；连续投送 10 首不崩溃；渲染器断电有明确提示且可回退本地。当前正式 DMC 已在本方 DMR 与第三方渲染器 Kodi 21.3 上验证发现/投送/暂停/停止/Seek/音量/进度/离线恢复（见报告 §2.24）；其余第三方设备矩阵仍待补。
 **M2 验收**：2 个第三方控制点可浏览并拉流播放、seek。当前 Browse/Range/真实曲库已由主机验证，第三方控制点浏览仍未完成。
 **M3 验收**：BubbleUPnP + Windows「播放到」可发现手机、投送 FLAC/MP3 播放；暂停/停止/seek/音量可用；DSP 旁路有 UI 说明；接收时本地播放自动停止；公网/重定向 URL 被拒绝。
 
@@ -413,7 +413,7 @@ UI：
 |---|---|---|
 | DMC Seek/音量真机操作 | **已通过**：正式 UI Seek 滑杆 → `DMC SOAP Seek 200`、UI 跳至 00:00:18；音量滑杆 → UI 29、DMR `GetVolume=29` | 完成；后续可补非常规值/边界值 |
 | 渲染器断电恢复 | **已实现并通过**：连续 3 次轮询失败置 `castOffline` + UI「渲染器已离线，正在重试…」；重启渲染器后 8 秒内自动清除并恢复轮询 | 说明：恢复后不自动重投，需用户重新选曲投送；可后续按需加“恢复后重投” |
-| 第三方渲染器兼容性 | 未测（缺设备） | 需真实目标：BubbleUPnP 本地渲染器（免费）、Windows「播放到」/foobar2000 UPnP、WiiM/电视。测试点：发现速度、`GetProtocolInfo` 匹配、`SetAVTransportURI`+`Play`、暂停/停止/Seek、音量、进度回读差异（部分设备 RelTime 为 0，轮询需容错）。建议由用户提供设备/安装 BubbleUPnP 后逐项过 |
+| 第三方渲染器兼容性 | **首测通过（Kodi 21.3，2026-11-02）**：发现、描述解析、`GetProtocolInfo`、`SetAVTransportURI`+`Play`、暂停/继续、Seek、音量、停止、离线检测与恢复均通过；已补 DIDL-Lite 元数据（`dc:title`/`res@protocolInfo`/`size`），Kodi 回读标题正常。详见报告 §2.24 | 其余目标待测：BubbleUPnP 本地渲染器、Windows「播放到」/WMP、foobar2000 UPnP、WiiM/电视。测试点同上；部分设备的 `GetProtocolInfo` 为通配或 `RelTime=0`，仍需逐项过 |
 | 小米息屏后台冻结 | **已定位并验证**：Greezer 在息屏后冻结 UID（`cgroup.freeze=1`），DMS 入站/出站全断；最近任务锁定、Doze 白名单、`power_pkg_white_list`/`cloud_memory_freeze_whitelist` 均无效 | 用户需把“省电策略”设为“无限制”（设置→应用信息→电量详情）；设置后 12 分钟息屏 DMS 6/6 采样 200。已在 `DlnaScreen` DMS 区域加入「息屏保活」卡片（原因 + 手动路径，纯文字提示，不自动修改/跳转）；README 与用户手册同步；AOSP 侧电池优化豁免仍建议保留 |
 | 30 分钟长跑与无外网 | **已通过**：90/90 采样、45 次自动重播、0 异常、Range 全 `206 524288`；socket 表 13 次采样 0 个非私网远端 | Wireshark 原始抓包待主机安装 tshark/镜像端口；长跑已在息屏 + 省电策略=无限制下完成 |
 
@@ -427,6 +427,8 @@ UI：
 **M4 验收**：每次联网角色弹窗与互斥矩阵通过；README/隐私/第三方声明完成；Wireshark 无外网流量；长跑稳定。
 
 > **2026-11-01 真机 M0/M2/DMC/M4 进度**：SSDP 发现、`VettedMediaDataSource` + MediaPlayer 播放/seek/暂停、CyberLink DMR 设备托管、主机 SOAP 控制、GENA 订阅/LastChange 已通过；公网 URL 投送返回 UPnPError 714 并拒绝播放。**双机 DMC→DMR** 通过：小米 17（Android 16）发现并控制 Mi 10 Pro（Android 13）的 DMR，跨机 Range 拉流和 STOPPED/PLAYING 状态正常。**DMS** 已通过 host Browse：测试曲库与真实曲库（8 专辑/DFF）均能返回 token + 正确后缀 URL，HEAD 200、Range 206/416、错误 token 400。**正式发送者 UI** 已接入三个主界面，包含 NetworkGate 自动角色弹窗、权限引导、DMS 启停、**DMC 产品化**（发现/选择/投送/暂停/停止/进度）与**格式匹配提示**（GetProtocolInfo + 仍要尝试/取消）。**M4**：Oboe 共享模式在 Mi 10 Pro 验证通过（Float/48k，混音器输出，有声音欠载 0）；`DlnaMediaSession` 已上线，DMR（DIDL 标题、系统播控键双向联动）与 DMC（投送目标/进度）均验证；发送者 DMS/DMC 子开关持久化。详见 `docs/DLNA_M0_TEST_REPORT.md`。待补：MediaSession 前台服务、真实 Wi-Fi 切换复测、30 分钟长跑、Wireshark 无外网流量、第三方渲染器/控制点矩阵。
+
+> **2026-11-02 第三方渲染器首测**：Kodi 21.3（同一 Mi 10 Pro 的 UPnP Renderer）通过发现、描述解析、投送、暂停/继续、Seek、音量、停止、离线检测与恢复；`CurrentURIMetaData` 已从空串升级为标准 DIDL-Lite（`dc:title`/`res@protocolInfo`/`size`）。其余渲染器（BubbleUPnP、Windows「播放到」/WMP、电视/音箱）与控制点矩阵待补。详见 `docs/DLNA_M0_TEST_REPORT.md` §2.24。
 
 > **2026-11-01 21:47 补充（小米 17 真机）**：DMS 长驻 specialUse FGS 在小米 HyperOS 上默认会被 PowerKeeper/Greezer 于息屏后冻结（`cgroup.freeze=1`，UID 网络全断）；最近任务锁定、Doze 白名单、`power_pkg_white_list`/`cloud_memory_freeze_whitelist` 均无效。将“省电策略”设为“无限制”后，12 分钟息屏测试 6/6 采样 DMS HTTP 200。详见报告 §2.19。
 

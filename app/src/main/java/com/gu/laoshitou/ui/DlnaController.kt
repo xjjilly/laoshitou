@@ -447,7 +447,17 @@ class DlnaController(private val context: Context) {
         try {
             NativeBridge.stopPlayback()
             context.stopService(Intent(context, PlaybackService::class.java))
-            val set = withContext(Dispatchers.IO) { dmcClient.setAvTransportUri(renderer, url) }
+            val metadata = MediaProtocolInfo.forFileName(file.name)?.mime?.let { mime ->
+                DmcClient.buildDidlMetadata(
+                    title = title,
+                    mediaUrl = url,
+                    mime = mime,
+                    sizeBytes = file.length(),
+                )
+            }
+            val set = withContext(Dispatchers.IO) {
+                dmcClient.setAvTransportUri(renderer, url, metadata)
+            }
             if (!set.successful) {
                 val error = DmcClient.extractTag(set.body, "errorDescription").orEmpty()
                 throw IllegalStateException("SetAVTransportURI 失败 HTTP ${set.code} $error")
