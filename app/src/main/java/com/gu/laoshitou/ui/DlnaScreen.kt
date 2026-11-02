@@ -274,6 +274,17 @@ private fun SenderPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = HifiGreen,
             )
+            if (!controller.dmsSharesLocalLibrary) {
+                Text(
+                    if (allFiles) {
+                        "本地曲库为空，当前仅提供 NAS 投送端点。"
+                    } else {
+                        "本地曲库未授权，当前仅提供 NAS 投送端点；授权后可加载本地曲库。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HifiAmber,
+                )
+            }
             Text(
                 controller.dmsStatus,
                 style = MaterialTheme.typography.bodySmall,
@@ -283,24 +294,32 @@ private fun SenderPanel(
                 "同一局域网内的设备都可以浏览并播放你的曲库。URL 带随机 token 与正确文件后缀。",
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedButton(
-                onClick = { scope.launch { controller.stopDms() } },
-                enabled = !controller.dmsBusy,
-            ) {
-                Text(if (controller.dmsBusy) "停止中…" else "停止共享")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { scope.launch { controller.stopDms() } },
+                    enabled = !controller.dmsBusy,
+                ) {
+                    Text(if (controller.dmsBusy) "停止中…" else "停止共享")
+                }
+                if (allFiles && !controller.dmsSharesLocalLibrary) {
+                    OutlinedButton(
+                        onClick = { scope.launch { controller.reloadDmsWithLocalLibrary() } },
+                        enabled = !controller.dmsBusy,
+                    ) {
+                        Text("加载本地曲库")
+                    }
+                }
             }
         } else {
             Button(
                 onClick = { scope.launch { controller.startDms() } },
-                enabled = !controller.dmsBusy &&
-                    allFiles &&
-                    controller.networkAddress != null,
+                enabled = !controller.dmsBusy && controller.networkAddress != null,
             ) {
                 Text(if (controller.dmsBusy) "启动中…" else "启动曲库共享")
             }
             if (!allFiles) {
                 Text(
-                    "先授予「所有文件访问」才能读取曲库。",
+                    "未授权本地曲库：仍可启动共享用于 NAS 投送；授权后才会共享本地曲库。",
                     style = MaterialTheme.typography.bodySmall,
                     color = HifiAmber,
                 )

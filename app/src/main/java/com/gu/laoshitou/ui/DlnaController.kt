@@ -20,7 +20,9 @@ import com.gu.laoshitou.dlna.DmcClient
 import com.gu.laoshitou.dlna.DmrDevice
 import com.gu.laoshitou.dlna.DmrDspConfig
 import com.gu.laoshitou.dlna.DmsDevice
+import com.gu.laoshitou.dlna.DmsLibrary
 import com.gu.laoshitou.dlna.DmsService
+import com.gu.laoshitou.dlna.EmptyDmsLibrary
 import com.gu.laoshitou.dlna.MediaPlayerBackend
 import com.gu.laoshitou.dlna.MediaProtocolInfo
 import com.gu.laoshitou.dlna.MusicLibraryDmsLibrary
@@ -78,6 +80,7 @@ class DlnaController(private val context: Context) {
     var dmsError by mutableStateOf<String?>(null)
     var dmsAlbums by mutableStateOf(0)
     var dmsTracks by mutableStateOf(0)
+    var dmsSharesLocalLibrary by mutableStateOf(false)
 
     var dmrRunning by mutableStateOf(false)
     var dmrBusy by mutableStateOf(false)
@@ -235,10 +238,15 @@ class DlnaController(private val context: Context) {
         try {
             val info = withContext(Dispatchers.IO) {
                 val root = File(Environment.getExternalStorageDirectory(), "laoshitou")
-                val library = MusicLibraryDmsLibrary(root)
-                if (library.albums().isEmpty()) {
-                    throw IllegalStateException("曲库为空或未授予「所有文件访问」")
+                // Do not require all-files access up front: NAS casting only
+                // needs the DMS token endpoint. The local library is loaded
+                // when the user has granted access and it is non-empty.
+                val localLibrary = if (hasAllFilesAccess()) {
+                    MusicLibraryDmsLibrary(root).takeIf { it.albums().isNotEmpty() }
+                } else {
+                    null
                 }
+                val library: DmsLibrary = localLibrary ?: EmptyDmsLibrary
                 val device = DmsDevice(context.applicationContext, library)
                 if (!device.startDevice()) {
                     throw IllegalStateException("DMS 启动失败，请检查 Wi-Fi/端口")
@@ -248,10 +256,12 @@ class DlnaController(private val context: Context) {
                     descriptionUrl = device.descriptionUrl.orEmpty(),
                     albums = library.albums().size,
                     tracks = library.albums().sumOf { library.tracks(it.id).size },
+                    localLibrary = localLibrary != null,
                 )
             }
             dmsDevice = info.device
             dmsRunning = true
+            dmsSharesLocalLibrary = info.localLibrary
             dmsStatus = info.descriptionUrl
             dmsAlbums = info.albums
             dmsTracks = info.tracks
@@ -280,11 +290,21 @@ class DlnaController(private val context: Context) {
         dmsDevice = null
         withContext(Dispatchers.IO) { device?.shutdown() }
         dmsRunning = false
+        dmsSharesLocalLibrary = false
         dmsStatus = ""
         dmsAlbums = 0
         dmsTracks = 0
         dmsBusy = false
         updateRadioLocks()
+    }
+
+    /** Restarts DMS after the user grants local-library access. */
+    suspend fun reloadDmsWithLocalLibrary() {
+        if (!hasAllFilesAccess()) {
+            return
+        }
+        stopDms()
+        startDms()
     }
 
     suspend fun startDmr(dsp: DmrDspConfig = DmrDspConfig()) {
@@ -698,6 +718,7 @@ class DlnaController(private val context: Context) {
         val descriptionUrl: String,
         val albums: Int,
         val tracks: Int,
+        val localLibrary: Boolean,
     )
 
     private companion object {
