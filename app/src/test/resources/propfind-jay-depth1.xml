@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:">
+<D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>Jay</D:displayname>
+<D:getlastmodified>Wed, 06 May 2026 08:01:55 GMT</D:getlastmodified>
+<D:resourcetype><D:collection/></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/cover.jpg</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>cover.jpg</D:displayname>
+<D:getcontentlength>16105</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:54 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/album.jpg</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>album.jpg</D:displayname>
+<D:getcontentlength>16105</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:39 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%A8%98%E5%AD%90%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>娘子 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>3316</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:39 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%A8%98%E5%AD%90%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>娘子 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>27880917</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:39 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E6%96%97%E7%89%9B%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>斗牛 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>3287</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:43 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E6%96%97%E7%89%9B%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>斗牛 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>30416876</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:44 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E6%98%9F%E6%99%B4%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>星晴 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>2102</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:53 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E6%98%9F%E6%99%B4%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>星晴 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>27959575</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:53 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%AE%8C%E7%BE%8E%E4%B8%BB%E4%B9%89%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>完美主义 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>2229</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:55 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%AE%8C%E7%BE%8E%E4%B8%BB%E4%B9%89%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>完美主义 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>27724126</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:00:56 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E9%BB%91%E8%89%B2%E5%B9%BD%E9%BB%98%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>黑色幽默 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>1600</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:12 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E9%BB%91%E8%89%B2%E5%B9%BD%E9%BB%98%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>黑色幽默 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>27631297</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:13 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%8F%AF%E7%88%B1%E5%A5%B3%E4%BA%BA%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>可爱女人 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>2426</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:32 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%8F%8D%E6%96%B9%E5%90%91%E7%9A%84%E9%92%9F%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>反方向的钟 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>2333</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:32 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%8F%AF%E7%88%B1%E5%A5%B3%E4%BA%BA%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>可爱女人 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>27714529</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:33 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%8F%8D%E6%96%B9%E5%90%91%E7%9A%84%E9%92%9F%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>反方向的钟 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>28364160</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:34 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E9%BE%99%E5%8D%B7%E9%A3%8E%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>龙卷风 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>2264</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:42 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E9%BE%99%E5%8D%B7%E9%A3%8E%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>龙卷风 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>27772682</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:42 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%8D%B0%E7%AC%AC%E5%AE%89%E8%80%81%E6%96%91%E9%B8%A0%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>印第安老斑鸠 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>2955</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:43 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E5%8D%B0%E7%AC%AC%E5%AE%89%E8%80%81%E6%96%91%E9%B8%A0%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>印第安老斑鸠 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>33787158</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:45 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E4%BC%8A%E6%96%AF%E5%9D%A6%E5%A0%A1%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.lrc</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>伊斯坦堡 - 周杰伦.lrc</D:displayname>
+<D:getcontentlength>1930</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:54 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response><D:response>
+<D:href>/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/%E4%BC%8A%E6%96%AF%E5%9D%A6%E5%A0%A1%20-%20%E5%91%A8%E6%9D%B0%E4%BC%A6.flac</D:href>
+<D:propstat>
+<D:prop>
+<D:displayname>伊斯坦堡 - 周杰伦.flac</D:displayname>
+<D:getcontentlength>22417867</D:getcontentlength>
+<D:getlastmodified>Wed, 06 May 2026 08:01:54 GMT</D:getlastmodified>
+<D:resourcetype></D:resourcetype>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response>
+</D:multistatus>

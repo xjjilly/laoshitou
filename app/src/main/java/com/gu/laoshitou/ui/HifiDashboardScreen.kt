@@ -78,6 +78,9 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                         color = HifiAmber,
                         modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { actions.setNasOpen(true) }) {
+                        Text("NAS")
+                    }
                     TextButton(onClick = { actions.setDlnaOpen(true) }) {
                         Text("DLNA")
                     }

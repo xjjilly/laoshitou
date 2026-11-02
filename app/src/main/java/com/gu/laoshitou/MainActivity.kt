@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gu.laoshitou.ui.DlnaController
 import com.gu.laoshitou.ui.DlnaRole
 import com.gu.laoshitou.ui.DlnaScreen
+import com.gu.laoshitou.ui.NasScreen
 import com.gu.laoshitou.ui.LanSessionController
 import com.gu.laoshitou.ui.RolePromptDialog
 import com.gu.laoshitou.ui.HifiDashboardScreen
@@ -1213,7 +1214,18 @@ private fun AppRoot() {
         setPlayMode = { state.playMode = it },
         setUiVersion = { state.uiVersion = it },
         setAboutOpen = { state.aboutOpen = it },
-        setDlnaOpen = { state.dlnaOpen = it },
+        setDlnaOpen = {
+            state.dlnaOpen = it
+            if (it) {
+                state.nasOpen = false
+            }
+        },
+        setNasOpen = {
+            state.nasOpen = it
+            if (it) {
+                state.dlnaOpen = false
+            }
+        },
         setFilePath = { state.filePath = it },
         setEqPath = { state.eqPath = it },
         refreshLibrary = ::refreshLibrary,
@@ -1322,7 +1334,9 @@ private fun AppRoot() {
         )
     }
 
-    if (state.dlnaOpen) {
+    if (state.nasOpen) {
+        NasScreen(onClose = { state.nasOpen = false })
+    } else if (state.dlnaOpen) {
         DlnaScreen(
             controller = dlnaController,
             playerState = state,

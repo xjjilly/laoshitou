@@ -102,6 +102,10 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("com.google.oboe:oboe:1.11.0")
 
+    // NAS M5 P0: lightweight HTTP client for WebDAV PROPFIND. Basic/Digest
+    // authentication and multistatus parsing live in the nas/ package.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // DLNA/UPnP protocol stack. jupnp is CDDL-1.0 only and therefore not
     // GPLv3-compatible; CyberLink for Java is BSD-3-Clause. See
     // docs/DLNA_UPNP_PLAN.md §13 for the license audit.
