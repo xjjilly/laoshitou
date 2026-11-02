@@ -6,9 +6,11 @@ package com.gu.laoshitou.dlna
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Document
 import java.io.ByteArrayInputStream
+import java.net.URI
 import javax.xml.parsers.DocumentBuilderFactory
 
 class DidlMetadataTest {
@@ -65,5 +67,20 @@ class DidlMetadataTest {
         )
         assertFalse(xml.contains("a<b>"))
         assertNotNull(parse(xml).getElementsByTagName("dc:title").item(0))
+    }
+
+    @Test
+    fun detectsSameDeviceRenderer() {
+        val renderer = DmcClient.Renderer(
+            location = URI("http://192.168.1.9:1808/"),
+            friendlyName = "Kodi",
+            avControlUrl = URI("http://192.168.1.9:1808/AVTransport/x/control.xml"),
+            renderingControlUrl = null,
+            connectionManagerUrl = null,
+        )
+        assertTrue(DmcClient.isLocalRenderer(renderer, "192.168.1.9"))
+        assertFalse(DmcClient.isLocalRenderer(renderer, "192.168.1.8"))
+        assertFalse(DmcClient.isLocalRenderer(renderer, null))
+        assertFalse(DmcClient.isLocalRenderer(renderer, " "))
     }
 }

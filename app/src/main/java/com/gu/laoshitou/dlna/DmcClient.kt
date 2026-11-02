@@ -247,6 +247,10 @@ class DmcClient(private val context: Context) {
                 "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
                 "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">"
 
+        /** True when the renderer runs on this phone (same LAN IPv4). */
+        fun isLocalRenderer(renderer: Renderer, localAddress: String?): Boolean =
+            !localAddress.isNullOrBlank() && renderer.location.host == localAddress
+
         /**
          * Builds the DIDL-Lite item that control points send as
          * `CurrentURIMetaData`. Many third-party renderers (TVs, AVRs,

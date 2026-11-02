@@ -406,6 +406,16 @@ private fun DmcPanel(
                 style = MaterialTheme.typography.bodySmall,
                 color = HifiGreen,
             )
+            if (DmcClient.isLocalRenderer(renderer, controller.networkAddress)) {
+                Text(
+                    "提示：该渲染器运行在本机（同机第三方应用）。MIUI/HyperOS 可能" +
+                        "冻结它的后台 UPnP 服务，导致投送中突然离线；请到 设置 → " +
+                        "应用信息 → 该渲染器应用（如 Kodi）→ 电量详情 → " +
+                        "省电策略 → 无限制。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HifiAmber,
+                )
+            }
             if (playerState.albums.isEmpty()) {
                 Text(
                     "曲库为空，请先在主界面扫描 laoshitou/ 曲库。",

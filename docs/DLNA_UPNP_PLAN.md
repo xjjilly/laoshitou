@@ -428,7 +428,7 @@ UI：
 
 > **2026-11-01 真机 M0/M2/DMC/M4 进度**：SSDP 发现、`VettedMediaDataSource` + MediaPlayer 播放/seek/暂停、CyberLink DMR 设备托管、主机 SOAP 控制、GENA 订阅/LastChange 已通过；公网 URL 投送返回 UPnPError 714 并拒绝播放。**双机 DMC→DMR** 通过：小米 17（Android 16）发现并控制 Mi 10 Pro（Android 13）的 DMR，跨机 Range 拉流和 STOPPED/PLAYING 状态正常。**DMS** 已通过 host Browse：测试曲库与真实曲库（8 专辑/DFF）均能返回 token + 正确后缀 URL，HEAD 200、Range 206/416、错误 token 400。**正式发送者 UI** 已接入三个主界面，包含 NetworkGate 自动角色弹窗、权限引导、DMS 启停、**DMC 产品化**（发现/选择/投送/暂停/停止/进度）与**格式匹配提示**（GetProtocolInfo + 仍要尝试/取消）。**M4**：Oboe 共享模式在 Mi 10 Pro 验证通过（Float/48k，混音器输出，有声音欠载 0）；`DlnaMediaSession` 已上线，DMR（DIDL 标题、系统播控键双向联动）与 DMC（投送目标/进度）均验证；发送者 DMS/DMC 子开关持久化。详见 `docs/DLNA_M0_TEST_REPORT.md`。待补：MediaSession 前台服务、真实 Wi-Fi 切换复测、30 分钟长跑、Wireshark 无外网流量、第三方渲染器/控制点矩阵。
 
-> **2026-11-02 第三方渲染器首测**：Kodi 21.3（同一 Mi 10 Pro 的 UPnP Renderer）通过发现、描述解析、投送、暂停/继续、Seek、音量、停止、离线检测与恢复；`CurrentURIMetaData` 已从空串升级为标准 DIDL-Lite（`dc:title`/`res@protocolInfo`/`size`）。其余渲染器（BubbleUPnP、Windows「播放到」/WMP、电视/音箱）与控制点矩阵待补。详见 `docs/DLNA_M0_TEST_REPORT.md` §2.24。
+> **2026-11-02 第三方渲染器首测**：Kodi 21.3（同一 Mi 10 Pro 的 UPnP Renderer）通过发现、描述解析、投送、暂停/继续、Seek、音量、停止、离线检测与恢复；`CurrentURIMetaData` 已从空串升级为标准 DIDL-Lite（`dc:title`/`res@protocolInfo`/`size`）。DMC 面板新增同机渲染器省电提示（渲染器 IP 等于本机 IP 时提醒把该渲染器应用的省电策略设为「无限制」）。其余渲染器（BubbleUPnP、Windows「播放到」/WMP、电视/音箱）与控制点矩阵待补。详见 `docs/DLNA_M0_TEST_REPORT.md` §2.24。
 
 > **2026-11-01 21:47 补充（小米 17 真机）**：DMS 长驻 specialUse FGS 在小米 HyperOS 上默认会被 PowerKeeper/Greezer 于息屏后冻结（`cgroup.freeze=1`，UID 网络全断）；最近任务锁定、Doze 白名单、`power_pkg_white_list`/`cloud_memory_freeze_whitelist` 均无效。将“省电策略”设为“无限制”后，12 分钟息屏测试 6/6 采样 DMS HTTP 200。详见报告 §2.19。
 

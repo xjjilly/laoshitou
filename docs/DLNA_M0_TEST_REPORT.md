@@ -447,7 +447,9 @@ PSS/Java Heap/Native Heap；Oboe 延迟/underrun/XRuns 每 10 秒由
 
 **环境注意（非应用缺陷）**
 1. MIUI 会冻结后台 Kodi；需把 Kodi「省电策略」设为「无限制」，否则
-   `1808` 端口无响应（与 DMS 后台冻结同源）。
+   `1808` 端口无响应（与 DMS 后台冻结同源）。已在 DMC 面板加入同机渲染器
+   提示：渲染器 IP 等于本机局域网 IP 时，显示「请把该渲染器应用的省电策略
+   设为无限制」。
 2. 用 `am force-stop` 强杀 Kodi 可能丢失尚未落盘的 UPnP 开关；正常退出
    会话会保存。重测时需在 Kodi UI 再次确认两个开关为开启。
 3. Kodi 的 `GetProtocolInfo` Sink 为 `http-get:*:*:*` 通配，格式预检查不会
