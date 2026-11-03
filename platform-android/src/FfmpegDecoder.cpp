@@ -46,6 +46,7 @@ FfmpegDecoder::~FfmpegDecoder() { close(); }
 
 bool FfmpegDecoder::open(const std::string& path) {
   close();
+  error_.clear();
 
   if (dsp::IsDffFile(path)) {
     return open_dff(path);
@@ -66,6 +67,7 @@ bool FfmpegDecoder::open(const std::string& path) {
 
 bool FfmpegDecoder::open_source(std::unique_ptr<MediaSource> source) {
   close();
+  error_.clear();
   if (source == nullptr) {
     error_ = "no media source";
     return false;
@@ -275,7 +277,6 @@ void FfmpegDecoder::close() {
     dff_file_.close();
   }
   converted_.clear();
-  error_.clear();
 }
 
 bool FfmpegDecoder::is_open() const noexcept {

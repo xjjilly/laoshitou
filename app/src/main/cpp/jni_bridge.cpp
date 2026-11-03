@@ -24,6 +24,7 @@ namespace {
 
 std::mutex g_engine_mutex;
 std::unique_ptr<audio::AudioEngine> g_engine;
+std::string g_start_error;
 
 }  // namespace
 
@@ -238,12 +239,17 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startFi
   }
 
   std::lock_guard<std::mutex> lock(g_engine_mutex);
+  g_start_error.clear();
   if (g_engine) {
     g_engine->stop();
     g_engine.reset();
   }
   auto engine = std::make_unique<audio::AudioEngine>();
   if (!engine->start_file(file_path, options)) {
+    g_start_error = engine->last_error();
+    if (g_start_error.empty()) {
+      g_start_error = "failed to start playback";
+    }
     return JNI_FALSE;
   }
   g_engine = std::move(engine);
@@ -277,16 +283,23 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_gu_laoshitou_NativeBridge_startSo
 
   auto source = std::make_unique<audio::JavaMediaSource>(env, data_source);
   if (!source->last_error().empty()) {
+    std::lock_guard<std::mutex> lock(g_engine_mutex);
+    g_start_error = source->last_error();
     return JNI_FALSE;
   }
 
   std::lock_guard<std::mutex> lock(g_engine_mutex);
+  g_start_error.clear();
   if (g_engine) {
     g_engine->stop();
     g_engine.reset();
   }
   auto engine = std::make_unique<audio::AudioEngine>();
   if (!engine->start_source(std::move(source), options)) {
+    g_start_error = engine->last_error();
+    if (g_start_error.empty()) {
+      g_start_error = "failed to start stream playback";
+    }
     return JNI_FALSE;
   }
   g_engine = std::move(engine);
@@ -523,6 +536,8 @@ Java_com_gu_laoshitou_NativeBridge_playbackLastError(JNIEnv* env, jobject /*thiz
     std::lock_guard<std::mutex> lock(g_engine_mutex);
     if (g_engine) {
       error = g_engine->last_error();
+    } else {
+      error = g_start_error;
     }
   }
   return env->NewStringUTF(error.c_str());
