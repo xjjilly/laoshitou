@@ -29,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.gu.laoshitou.NativeBridge
 import com.gu.laoshitou.catalog.CatalogAlbum
 import com.gu.laoshitou.catalog.CatalogAlbumDetail
 import com.gu.laoshitou.catalog.CatalogClient
@@ -89,11 +91,21 @@ fun CatalogScreen(
     var connected by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf("") }
+    var playing by remember { mutableStateOf(false) }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(0L) }
+    var dragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableStateOf(0f) }
 
     LaunchedEffect(Unit) {
         while (true) {
             playedStore.load().forEach { played[it] = true }
-            delay(1000)
+            if (!dragging) {
+                playing = NativeBridge.isPlaying()
+                durationMs = NativeBridge.playbackDurationMs()
+                positionMs = NativeBridge.playbackPositionMs()
+            }
+            delay(500)
         }
     }
 
@@ -214,6 +226,46 @@ fun CatalogScreen(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
                             color = HifiCyan,
+                        )
+                    }
+                }
+
+                if (playing && durationMs > 0L) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatDuration(positionMs.toInt()),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HifiMuted,
+                        )
+                        Slider(
+                            value = if (dragging) {
+                                dragValue.coerceIn(0f, durationMs.toFloat())
+                            } else {
+                                positionMs.toFloat().coerceIn(0f, durationMs.toFloat())
+                            },
+                            onValueChange = {
+                                dragging = true
+                                dragValue = it
+                            },
+                            onValueChangeFinished = {
+                                NativeBridge.seekPlayback(dragValue.toLong())
+                                positionMs = dragValue.toLong()
+                                dragging = false
+                            },
+                            valueRange = 0f..durationMs.toFloat(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp),
+                        )
+                        Text(
+                            text = formatDuration(durationMs.toInt()),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HifiMuted,
                         )
                     }
                 }
