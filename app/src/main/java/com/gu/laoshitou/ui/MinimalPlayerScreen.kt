@@ -68,6 +68,9 @@ fun MinimalPlayerScreen(state: PlayerState, actions: PlayerActions) {
                         style = MaterialTheme.typography.displaySmall,
                         modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { actions.setCatalogOpen(true) }) {
+                        Text("曲库")
+                    }
                     TextButton(onClick = { actions.setNasOpen(true) }) {
                         Text("NAS")
                     }

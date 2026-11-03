@@ -78,6 +78,9 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                         color = HifiAmber,
                         modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { actions.setCatalogOpen(true) }) {
+                        Text("曲库")
+                    }
                     TextButton(onClick = { actions.setNasOpen(true) }) {
                         Text("NAS")
                     }

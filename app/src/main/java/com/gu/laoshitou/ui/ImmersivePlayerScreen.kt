@@ -80,6 +80,9 @@ fun ImmersivePlayerScreen(state: PlayerState, actions: PlayerActions) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
+                    TextButton(onClick = { actions.setCatalogOpen(true) }) {
+                        Text("曲库")
+                    }
                     TextButton(onClick = { actions.setNasOpen(true) }) {
                         Text("NAS")
                     }

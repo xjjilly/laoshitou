@@ -34,6 +34,11 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.gu.laoshitou.catalog.CatalogMediaDataSource
+import com.gu.laoshitou.catalog.CatalogTrack
+import com.gu.laoshitou.nas.WebDavClient
+import com.gu.laoshitou.nas.WebDavCredentialStore
+import com.gu.laoshitou.ui.CatalogScreen
 import com.gu.laoshitou.ui.DlnaController
 import com.gu.laoshitou.ui.DlnaRole
 import com.gu.laoshitou.ui.DlnaScreen
@@ -67,6 +72,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -912,6 +918,79 @@ private fun AppRoot() {
         return result.started
     }
 
+    suspend fun beginCatalogPlayback(track: CatalogTrack): String? {
+        val saved = WebDavCredentialStore(context).load()
+        if (saved == null) {
+            state.status = "请先在 NAS 曲库连接并保存 WebDAV 凭据"
+            return state.status
+        }
+        if (track.fileSize <= 0L) {
+            state.status = "曲库未提供文件大小，无法流式播放"
+            return state.status
+        }
+        val url = runCatching {
+            saved.account.baseUrl.newBuilder()
+                .addPathSegments(track.filePath.trimStart('/'))
+                .build()
+        }.getOrNull()
+        if (url == null) {
+            state.status = "曲目路径无效"
+            return state.status
+        }
+        val webdav = WebDavClient(saved.account, saved.password, saved.authType)
+        val source = CatalogMediaDataSource(webdav, url, track.fileSize)
+        NativeBridge.stopPlayback()
+        val plan = queryNativeOutputPlan(context)
+        val started = withContext(Dispatchers.IO) {
+            runCatching {
+                NativeBridge.startSource(
+                    source,
+                    state.processing,
+                    plan.supportedRates,
+                    plan.nativeRate,
+                    effectiveEqPath(),
+                    state.crossfeed,
+                    state.eqCascade,
+                    state.eqSlopeEnabled,
+                    state.eqSlope,
+                    state.outputRateOverride,
+                    state.resamplerQuality,
+                    state.crossfeedWidth,
+                    state.stereoWidth,
+                    state.loudness,
+                    currentLoudnessVolume(state.loudness),
+                    state.limiterEnabled,
+                    state.limiterThresholdDb,
+                    plan.usbDetected,
+                    state.usbAuto192k,
+                    state.brirPath,
+                    state.brirEnabled,
+                    state.brirMix,
+                    state.eqLinearPhase,
+                    state.multibandEnabled,
+                    state.multibandLowHz,
+                    state.multibandHighHz,
+                    state.multibandThresholdDb,
+                )
+            }.getOrDefault(false)
+        }
+        if (!started) {
+            source.close()
+            webdav.close()
+            state.status = NativeBridge.playbackLastError()
+                .ifBlank { "原生播放启动失败" }
+            return state.status
+        }
+        state.playing = true
+        state.paused = false
+        state.trackName = track.title
+        state.currentPath = url.toString()
+        state.currentTrackIndex = -1
+        state.status = "正在播放（SQL 曲库）：${track.title}"
+        refreshMetrics(state)
+        return null
+    }
+
     fun playTrack(index: Int) {
         val album = state.selectedAlbum ?: return
         val track = album.tracks.getOrNull(index) ?: return
@@ -1218,12 +1297,22 @@ private fun AppRoot() {
             state.dlnaOpen = it
             if (it) {
                 state.nasOpen = false
+                state.catalogOpen = false
             }
         },
         setNasOpen = {
             state.nasOpen = it
             if (it) {
                 state.dlnaOpen = false
+                state.catalogOpen = false
+            }
+        },
+        setCatalogOpen = {
+            state.catalogOpen = it
+            if (it) {
+                state.nasOpen = false
+                state.dlnaOpen = false
+                state.aboutOpen = false
             }
         },
         setFilePath = { state.filePath = it },
@@ -1338,6 +1427,11 @@ private fun AppRoot() {
         NasScreen(
             onClose = { state.nasOpen = false },
             onCast = { entry -> dlnaController.castNasEntry(entry) },
+        )
+    } else if (state.catalogOpen) {
+        CatalogScreen(
+            onClose = { state.catalogOpen = false },
+            onPlayTrack = { track -> beginCatalogPlayback(track) },
         )
     } else if (state.dlnaOpen) {
         DlnaScreen(

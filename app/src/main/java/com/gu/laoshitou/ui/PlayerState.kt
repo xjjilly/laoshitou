@@ -74,6 +74,7 @@ class PlayerState(
     var aboutOpen by mutableStateOf(false)
     var dlnaOpen by mutableStateOf(false)
     var nasOpen by mutableStateOf(false)
+    var catalogOpen by mutableStateOf(false)
 
     var filePath by mutableStateOf(defaultFilePath)
     var currentPath by mutableStateOf("")
@@ -198,6 +199,7 @@ data class PlayerActions(
     val setAboutOpen: (Boolean) -> Unit,
     val setDlnaOpen: (Boolean) -> Unit,
     val setNasOpen: (Boolean) -> Unit,
+    val setCatalogOpen: (Boolean) -> Unit,
     val setFilePath: (String) -> Unit,
     val setEqPath: (String) -> Unit,
 )
