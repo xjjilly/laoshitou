@@ -36,6 +36,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gu.laoshitou.catalog.CatalogMediaDataSource
 import com.gu.laoshitou.catalog.CatalogTrack
+import com.gu.laoshitou.catalog.PlayedTrackStore
 import com.gu.laoshitou.nas.WebDavClient
 import com.gu.laoshitou.nas.WebDavCredentialStore
 import com.gu.laoshitou.ui.CatalogScreen
@@ -72,6 +73,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -913,12 +915,27 @@ private fun AppRoot() {
             state.trackName = displayName
             state.currentTrackIndex = trackIndex
             state.currentPath = path
+            state.catalogQueue = emptyList()
+            state.catalogQueueIndex = -1
         }
         refreshMetrics(state)
         return result.started
     }
 
-    suspend fun beginCatalogPlayback(track: CatalogTrack): String? {
+    fun catalogTrackUrl(track: CatalogTrack): HttpUrl? {
+        val saved = WebDavCredentialStore(context).load() ?: return null
+        return runCatching {
+            saved.account.baseUrl.newBuilder()
+                .addPathSegments(track.filePath.trimStart('/'))
+                .build()
+        }.getOrNull()
+    }
+
+    suspend fun beginCatalogPlayback(
+        track: CatalogTrack,
+        queue: List<CatalogTrack> = listOf(track),
+        index: Int = 0,
+    ): String? {
         val saved = WebDavCredentialStore(context).load()
         if (saved == null) {
             state.status = "请先在 NAS 曲库连接并保存 WebDAV 凭据"
@@ -928,11 +945,7 @@ private fun AppRoot() {
             state.status = "曲库未提供文件大小，无法流式播放"
             return state.status
         }
-        val url = runCatching {
-            saved.account.baseUrl.newBuilder()
-                .addPathSegments(track.filePath.trimStart('/'))
-                .build()
-        }.getOrNull()
+        val url = catalogTrackUrl(track)
         if (url == null) {
             state.status = "曲目路径无效"
             return state.status
@@ -986,9 +999,27 @@ private fun AppRoot() {
         state.trackName = track.title
         state.currentPath = url.toString()
         state.currentTrackIndex = -1
+        state.catalogQueue = queue
+        state.catalogQueueIndex = index
+        PlayedTrackStore(context).markPlayed(track.id)
         state.status = "正在播放（SQL 曲库）：${track.title}"
         refreshMetrics(state)
         return null
+    }
+
+    suspend fun castCatalogTrack(track: CatalogTrack): String? {
+        val saved = WebDavCredentialStore(context).load()
+            ?: return "请先在 NAS 曲库连接并保存 WebDAV 凭据"
+        val url = catalogTrackUrl(track) ?: return "曲目路径无效"
+        if (track.fileSize <= 0L) {
+            return "曲库未提供文件大小，无法投送"
+        }
+        return dlnaController.castCatalogTrack(
+            url = url,
+            name = track.title + "." + track.format,
+            size = track.fileSize,
+            title = track.title,
+        )
     }
 
     fun playTrack(index: Int) {
@@ -1050,7 +1081,34 @@ private fun AppRoot() {
         }
     }
 
-    fun advanceAfterEnd(): Boolean {
+    suspend fun advanceAfterEnd(): Boolean {
+        if (state.catalogQueueIndex >= 0 && state.catalogQueue.isNotEmpty()) {
+            val count = state.catalogQueue.size
+            val current = state.catalogQueueIndex
+            val next = when (state.playMode) {
+                PlayMode.Sequential -> current + 1
+                PlayMode.Loop -> (current + 1) % count
+                PlayMode.Shuffle -> {
+                    if (count == 1) {
+                        current
+                    } else {
+                        var candidate = Random.nextInt(count - 1)
+                        if (candidate >= current) {
+                            candidate += 1
+                        }
+                        candidate
+                    }
+                }
+            }
+            if (next in state.catalogQueue.indices) {
+                return beginCatalogPlayback(
+                    state.catalogQueue[next],
+                    state.catalogQueue,
+                    next,
+                ) == null
+            }
+            return false
+        }
         val current = state.currentTrackIndex
         if (current < 0) {
             if (state.playMode == PlayMode.Loop && state.currentPath.isNotEmpty()) {
@@ -1431,7 +1489,10 @@ private fun AppRoot() {
     } else if (state.catalogOpen) {
         CatalogScreen(
             onClose = { state.catalogOpen = false },
-            onPlayTrack = { track -> beginCatalogPlayback(track) },
+            onPlayTrack = { track, queue, index ->
+                beginCatalogPlayback(track, queue, index)
+            },
+            onCastTrack = { track -> castCatalogTrack(track) },
         )
     } else if (state.dlnaOpen) {
         DlnaScreen(

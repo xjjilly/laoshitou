@@ -6,6 +6,7 @@ package com.gu.laoshitou.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.gu.laoshitou.catalog.CatalogTrack
 
 enum class UiVersion(val label: String) {
     Minimal("极简"),
@@ -75,6 +76,8 @@ class PlayerState(
     var dlnaOpen by mutableStateOf(false)
     var nasOpen by mutableStateOf(false)
     var catalogOpen by mutableStateOf(false)
+    var catalogQueue by mutableStateOf<List<CatalogTrack>>(emptyList())
+    var catalogQueueIndex by mutableStateOf(-1)
 
     var filePath by mutableStateOf(defaultFilePath)
     var currentPath by mutableStateOf("")

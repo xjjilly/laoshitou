@@ -33,6 +33,7 @@ import com.gu.laoshitou.nas.WebDavClient
 import com.gu.laoshitou.nas.WebDavCredentialStore
 import com.gu.laoshitou.nas.WebDavEntry
 import com.gu.laoshitou.nas.WebDavResource
+import okhttp3.HttpUrl
 import java.io.File
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
@@ -453,6 +454,47 @@ class DlnaController(private val context: Context) {
      *
      * Returns null on success or a user-facing error message.
      */
+    suspend fun castCatalogTrack(
+        url: HttpUrl,
+        name: String,
+        size: Long,
+        title: String,
+    ): String? {
+        if (size <= 0L) {
+            return "服务器未提供文件大小，无法投送"
+        }
+        val saved = withContext(Dispatchers.IO) {
+            WebDavCredentialStore(appContext).load()
+        } ?: return "NAS 凭据不存在，请先在 NAS 页面连接"
+        if (!url.host.equals(saved.account.baseUrl.host, ignoreCase = true) ||
+            url.port != saved.account.baseUrl.port ||
+            url.scheme != saved.account.baseUrl.scheme
+        ) {
+            return "NAS 地址与保存的凭据不一致，请重新连接"
+        }
+        if (casting) {
+            stopCast()
+        }
+        closeCastClient()
+        val client = WebDavClient(saved.account, saved.password, saved.authType)
+        castClient = client
+        val entry = WebDavEntry(
+            url = url,
+            path = url.encodedPath,
+            name = name,
+            isCollection = false,
+            size = size,
+        )
+        castTrack(WebDavResource(client, entry), title)
+        return if (casting || dmcFormatWarning != null) {
+            null
+        } else {
+            val message = dmcError ?: "投送失败"
+            closeCastClient()
+            message
+        }
+    }
+
     suspend fun castNasEntry(entry: WebDavEntry): String? {
         if (!entry.isAudio) {
             return "只能投送音频文件"

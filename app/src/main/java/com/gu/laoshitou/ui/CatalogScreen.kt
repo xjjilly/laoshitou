@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,6 +57,7 @@ import com.gu.laoshitou.catalog.CatalogClient
 import com.gu.laoshitou.catalog.CatalogSettingsStore
 import com.gu.laoshitou.catalog.CatalogTrack
 import com.gu.laoshitou.catalog.PlayedTrackStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -66,7 +68,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun CatalogScreen(
     onClose: () -> Unit,
-    onPlayTrack: suspend (CatalogTrack) -> String?,
+    onPlayTrack: suspend (CatalogTrack, List<CatalogTrack>, Int) -> String?,
+    onCastTrack: suspend (CatalogTrack) -> String?,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -88,7 +91,10 @@ fun CatalogScreen(
     var status by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        playedStore.load().forEach { played[it] = true }
+        while (true) {
+            playedStore.load().forEach { played[it] = true }
+            delay(1000)
+        }
     }
 
     fun connect() {
@@ -136,11 +142,11 @@ fun CatalogScreen(
         }
     }
 
-    fun play(track: CatalogTrack) {
+    fun play(track: CatalogTrack, queue: List<CatalogTrack>, index: Int) {
         scope.launch {
             error = null
             status = "正在打开：${track.title}"
-            val failure = onPlayTrack(track)
+            val failure = onPlayTrack(track, queue, index)
             if (failure == null) {
                 playedStore.markPlayed(track.id)
                 played[track.id] = true
@@ -148,6 +154,20 @@ fun CatalogScreen(
             } else {
                 error = failure
                 status = "播放失败"
+            }
+        }
+    }
+
+    fun cast(track: CatalogTrack) {
+        scope.launch {
+            error = null
+            status = "正在投送：${track.title}"
+            val failure = onCastTrack(track)
+            if (failure == null) {
+                status = "已投送：${track.title}"
+            } else {
+                error = failure
+                status = "投送失败"
             }
         }
     }
@@ -219,10 +239,12 @@ fun CatalogScreen(
                         onOpen = ::openAlbum,
                     )
                 } else {
+                    val currentDetail = detail!!
                     CatalogTrackList(
-                        detail = detail!!,
+                        detail = currentDetail,
                         played = played,
-                        onPlay = ::play,
+                        onPlay = { track, index -> play(track, currentDetail.tracks, index) },
+                        onCast = ::cast,
                     )
                 }
 
@@ -414,7 +436,8 @@ private fun AlbumCover(cover: ImageBitmap?, title: String) {
 private fun CatalogTrackList(
     detail: CatalogAlbumDetail,
     played: Map<String, Boolean>,
-    onPlay: (CatalogTrack) -> Unit,
+    onPlay: (CatalogTrack, Int) -> Unit,
+    onCast: (CatalogTrack) -> Unit,
 ) {
     Row(
         modifier = Modifier.padding(top = 10.dp),
@@ -437,7 +460,9 @@ private fun CatalogTrackList(
                 color = HifiMuted,
             )
         }
-        TextButton(onClick = { onPlay(detail.tracks.firstOrNull() ?: return@TextButton) }) {
+        TextButton(onClick = {
+            detail.tracks.firstOrNull()?.let { onPlay(it, 0) }
+        }) {
             Text("播放全部")
         }
     }
@@ -445,12 +470,12 @@ private fun CatalogTrackList(
         modifier = Modifier.padding(top = 6.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        items(detail.tracks, key = { it.id }) { track ->
+        itemsIndexed(detail.tracks, key = { _, track -> track.id }) { index, track ->
             val isPlayed = played[track.id] == true
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onPlay(track) }
+                    .clickable { onPlay(track, index) }
                     .padding(horizontal = 4.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -482,6 +507,14 @@ private fun CatalogTrackList(
                         color = HifiGreen,
                     )
                 }
+                Text(
+                    text = "投送",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HifiCyan,
+                    modifier = Modifier
+                        .clickable { onCast(track) }
+                        .padding(start = 10.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                )
             }
         }
     }
