@@ -1489,6 +1489,11 @@ private fun AppRoot() {
     } else if (state.catalogOpen) {
         CatalogScreen(
             onClose = { state.catalogOpen = false },
+            controller = dlnaController,
+            onOpenDlna = {
+                state.catalogOpen = false
+                state.dlnaOpen = true
+            },
             onPlayTrack = { track, queue, index ->
                 beginCatalogPlayback(track, queue, index)
             },

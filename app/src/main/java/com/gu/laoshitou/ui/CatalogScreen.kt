@@ -53,6 +53,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gu.laoshitou.NativeBridge
+import com.gu.laoshitou.dlna.DmcClient
 import com.gu.laoshitou.catalog.CatalogAlbum
 import com.gu.laoshitou.catalog.CatalogAlbumDetail
 import com.gu.laoshitou.catalog.CatalogClient
@@ -70,6 +71,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun CatalogScreen(
     onClose: () -> Unit,
+    controller: DlnaController,
+    onOpenDlna: () -> Unit,
     onPlayTrack: suspend (CatalogTrack, List<CatalogTrack>, Int) -> String?,
     onCastTrack: suspend (CatalogTrack) -> String?,
 ) {
@@ -227,6 +230,97 @@ fun CatalogScreen(
                             strokeWidth = 2.dp,
                             color = HifiCyan,
                         )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (controller.casting) {
+                            "投送中：${controller.castTitle}"
+                        } else {
+                            "投送目标：" +
+                                (controller.selectedRenderer?.friendlyName ?: "未选择")
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (controller.casting) HifiGreen else HifiMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!controller.casting) {
+                        TextButton(onClick = onOpenDlna) {
+                            Text("DLNA 设置", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+
+                if (controller.casting) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${DmcClient.formatTime(controller.castPositionMs)} / " +
+                                    DmcClient.formatTime(controller.castDurationMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = HifiMuted,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = {
+                                scope.launch { controller.pauseOrResumeCast() }
+                            }) {
+                                Text(
+                                    text = if (controller.castPaused) "继续" else "暂停",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                            TextButton(onClick = {
+                                scope.launch { controller.stopCast() }
+                            }) {
+                                Text("停止投送", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        val castDuration = controller.castDurationMs.coerceAtLeast(1L)
+                        var castSeek by remember(controller.castPositionMs) {
+                            mutableStateOf(controller.castPositionMs.toFloat())
+                        }
+                        Slider(
+                            value = castSeek.coerceIn(0f, castDuration.toFloat()),
+                            onValueChange = { castSeek = it },
+                            valueRange = 0f..castDuration.toFloat(),
+                            onValueChangeFinished = {
+                                scope.launch { controller.seekCast(castSeek.toLong()) }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "音量 ${controller.castVolume}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = HifiMuted,
+                            )
+                            var castVolume by remember(controller.castVolume) {
+                                mutableStateOf(controller.castVolume.toFloat())
+                            }
+                            Slider(
+                                value = castVolume,
+                                onValueChange = { castVolume = it },
+                                valueRange = 0f..100f,
+                                onValueChangeFinished = {
+                                    scope.launch { controller.setCastVolume(castVolume.toInt()) }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 8.dp),
+                            )
+                        }
                     }
                 }
 
