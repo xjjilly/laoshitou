@@ -460,7 +460,7 @@ private fun ConnectionCard(
             value = baseUrl,
             onValueChange = onBaseUrlChange,
             label = { Text("服务器地址") },
-            placeholder = { Text("http://nas.local:9005/") },
+            placeholder = { Text("http://NAS-IP:9005/") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )

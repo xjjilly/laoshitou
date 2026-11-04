@@ -11,9 +11,9 @@ import org.junit.Test
 class WebDavUrlTest {
     @Test
     fun parsesBaseUrlWithHostnameAndPort() {
-        val url = WebDavUrl.parseBase(" http://192.168.1.10:9005/ ")
+        val url = WebDavUrl.parseBase(" http://10.0.0.10:9005/ ")
         assertEquals("http", url.scheme)
-        assertEquals("192.168.1.10", url.host)
+        assertEquals("10.0.0.10", url.host)
         assertEquals(9005, url.port)
     }
 
@@ -29,34 +29,34 @@ class WebDavUrlTest {
 
     @Test
     fun resolvesPercentEncodedHref() {
-        val base = WebDavUrl.parseBase("http://192.168.1.10:9005/musicok/")
+        val base = WebDavUrl.parseBase("http://10.0.0.10:9005/musicok/")
         val url = WebDavUrl.resolve(base, "/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/")
         assertEquals("/musicok/%E5%91%A8%E6%9D%B0%E4%BC%A6/Jay/", url.encodedPath)
     }
 
     @Test
     fun allowsAtSignInPath() {
-        val url = WebDavUrl.parseBase("http://192.168.1.10:9005/music@home/")
-        assertEquals("192.168.1.10", url.host)
+        val url = WebDavUrl.parseBase("http://10.0.0.10:9005/music@home/")
+        assertEquals("10.0.0.10", url.host)
         assertEquals(9005, url.port)
     }
 
     @Test(expected = WebDavUrlException::class)
     fun rejectsCrossHostHref() {
-        val base = WebDavUrl.parseBase("http://192.168.1.10:9005/")
+        val base = WebDavUrl.parseBase("http://10.0.0.10:9005/")
         WebDavUrl.resolve(base, "http://evil.example/x")
     }
 
     @Test(expected = WebDavUrlException::class)
     fun rejectsCrossPortHref() {
-        val base = WebDavUrl.parseBase("http://192.168.1.10:9005/")
-        WebDavUrl.resolve(base, "http://192.168.1.10:9006/x")
+        val base = WebDavUrl.parseBase("http://10.0.0.10:9005/")
+        WebDavUrl.resolve(base, "http://10.0.0.10:9006/x")
     }
 
     @Test(expected = WebDavUrlException::class)
     fun rejectsCrossSchemeHref() {
-        val base = WebDavUrl.parseBase("http://192.168.1.10:9005/")
-        WebDavUrl.resolve(base, "https://192.168.1.10:9005/x")
+        val base = WebDavUrl.parseBase("http://10.0.0.10:9005/")
+        WebDavUrl.resolve(base, "https://10.0.0.10:9005/x")
     }
 
     @Test

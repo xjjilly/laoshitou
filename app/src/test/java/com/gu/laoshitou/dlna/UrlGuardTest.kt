@@ -12,18 +12,18 @@ class UrlGuardTest {
     fun acceptsPrivateIpv4HttpUrls() {
         UrlGuard.requireAllowed("http://10.0.0.1/file.flac")
         UrlGuard.requireAllowed("http://172.16.0.1:8080/music/track.mp3")
-        UrlGuard.requireAllowed("http://192.168.1.1/")
-        UrlGuard.requireAllowed("HTTP://192.168.1.1/")
-        UrlGuard.requireAllowed("http://192.168.1.1:65535/a?b=c")
+        UrlGuard.requireAllowed("http://10.0.0.1/")
+        UrlGuard.requireAllowed("HTTP://10.0.0.1/")
+        UrlGuard.requireAllowed("http://10.0.0.1:65535/a?b=c")
     }
 
     @Test
     fun rejectsNonHttpSchemes() {
-        rejects("https://192.168.1.1/a.flac")
+        rejects("https://10.0.0.1/a.flac")
         rejects("file:///etc/passwd")
-        rejects("ftp://192.168.1.1/a.flac")
+        rejects("ftp://10.0.0.1/a.flac")
         rejects("content://media/external/audio/1")
-        rejects("rtsp://192.168.1.1/a")
+        rejects("rtsp://10.0.0.1/a")
     }
 
     @Test
@@ -42,24 +42,24 @@ class UrlGuardTest {
     fun rejectsHostnamesAndAmbiguousLiterals() {
         rejects("http://localhost/")
         rejects("http://example.com/")
-        rejects("http://192.168.1.1.evil.com/")
+        rejects("http://10.0.0.1.evil.com/")
         rejects("http://010.0.0.1/")
         rejects("http://0x0a.0.0.1/")
-        rejects("http://192.168.1.1./")
+        rejects("http://10.0.0.1./")
         rejects("http://[::1]/")
     }
 
     @Test
     fun rejectsUserInfoAndFragments() {
-        rejects("http://user@192.168.1.1/")
-        rejects("http://192.168.1.1@evil.com/")
-        rejects("http://192.168.1.1/a#fragment")
+        rejects("http://user@10.0.0.1/")
+        rejects("http://10.0.0.1@evil.com/")
+        rejects("http://10.0.0.1/a#fragment")
     }
 
     @Test
     fun rejectsInvalidPorts() {
-        rejects("http://192.168.1.1:0/")
-        rejects("http://192.168.1.1:65536/")
+        rejects("http://10.0.0.1:0/")
+        rejects("http://10.0.0.1:65536/")
     }
 
     @Test

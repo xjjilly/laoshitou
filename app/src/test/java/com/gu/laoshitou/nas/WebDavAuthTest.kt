@@ -17,7 +17,7 @@ class WebDavAuthTest {
     @Test
     fun buildsDigestHeaderFromDufsChallenge() {
         val request = Request.Builder()
-            .url("http://192.168.1.10:9006/")
+            .url("http://10.0.0.10:9006/")
             .method(
                 "PROPFIND",
                 """<?xml version="1.0"?><D:propfind xmlns:D="DAV:"/>"""
@@ -55,7 +55,7 @@ class WebDavAuthTest {
     @Test
     fun basicModeDoesNotBuildDigestHeader() {
         val request = Request.Builder()
-            .url("http://192.168.1.10:9005/")
+            .url("http://10.0.0.10:9005/")
             .method("PROPFIND", "".toRequestBody("application/xml".toMediaType()))
             .build()
         val response = Response.Builder()

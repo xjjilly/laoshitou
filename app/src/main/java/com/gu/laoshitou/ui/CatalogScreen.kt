@@ -445,7 +445,7 @@ private fun CatalogConnectionCard(
                 value = baseUrl,
                 onValueChange = onBaseUrlChange,
                 label = { Text("API 地址") },
-                placeholder = { Text("http://192.168.1.10:9007") },
+                placeholder = { Text("http://NAS-IP:9007") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

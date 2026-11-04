@@ -8,10 +8,10 @@
 
 | 项 | 值 |
 |---|---|
-| 手机 A（DMR） | Mi 10 Pro，Android 13（API 33），arm64-v8a，Wi-Fi `192.168.1.3` |
-| 手机 B（DMC/媒体源） | Xiaomi 17（25113PN0EC），Android 16（API 36），arm64-v8a，Wi-Fi `192.168.1.6` |
-| 测试主机 | Windows，`192.168.1.8` |
-| 局域网其他设备 | `192.168.1.10`（fnOS NAS，仅 `Storage:1`） |
+| 手机 A（DMR） | Mi 10 Pro，Android 13（API 33），arm64-v8a，Wi-Fi `10.0.0.3` |
+| 手机 B（DMC/媒体源） | Xiaomi 17（25113PN0EC），Android 16（API 36），arm64-v8a，Wi-Fi `10.0.0.6` |
+| 测试主机 | Windows，`10.0.0.8` |
+| 局域网其他设备 | `10.0.0.10`（fnOS NAS，仅 `Storage:1`） |
 | 构建 | `:app:assembleDebug`，调试包 |
 | 网络权限 | 仅 debug manifest：INTERNET / ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE / CHANGE_WIFI_MULTICAST_STATE / NEARBY_WIFI_DEVICES（neverForLocation；当前未授权）；`usesCleartextTraffic=true` |
 | 测试入口 | `com.gu.laoshitou.dlna.M0Activity`（debug source set，不进 release） |
@@ -20,12 +20,12 @@
 
 ### 2.1 SSDP
 
-- 手机 `GuardedDiscovery` 发送 M-SEARCH，5 秒内发现 `192.168.1.10` 的 3 条记录（`upnp:rootdevice`、UDN、`Storage:1`）。
+- 手机 `GuardedDiscovery` 发送 M-SEARCH，5 秒内发现 `10.0.0.10` 的 3 条记录（`upnp:rootdevice`、UDN、`Storage:1`）。
 - 主机侧 M-SEARCH（`ST=MediaRenderer:1`）发现手机 DMR：
 
 ```
 SSDP ST=urn:schemas-upnp-org:device:MediaRenderer:1
-     LOCATION=http://192.168.1.3:39520/description.xml
+     LOCATION=http://10.0.0.3:39520/description.xml
      USN=uuid:edcd3bd8-dd72-3bef-a722-2c420a0be37e::urn:schemas-upnp-org:device:MediaRenderer:1
 ```
 
@@ -34,7 +34,7 @@ SSDP ST=urn:schemas-upnp-org:device:MediaRenderer:1
 
 ### 2.2 MediaPlayer + VettedMediaDataSource
 
-测试音：30 秒 44.1 kHz/16-bit 立体声 WAV，由手机内 `DebugRangeServer` 在 `192.168.1.3` 的随机端口提供 HTTP Range。
+测试音：30 秒 44.1 kHz/16-bit 立体声 WAV，由手机内 `DebugRangeServer` 在 `10.0.0.3` 的随机端口提供 HTTP Range。
 
 | 验证点 | 结果 |
 |---|---|
@@ -54,10 +54,10 @@ SSDP ST=urn:schemas-upnp-org:device:MediaRenderer:1
 - 自定义 `MediaRenderer:1` 描述（独立 UDN、AVTransport/RenderingControl/ConnectionManager 及 SCPD/control/event URL）可从主机访问：
 
 ```
-GET http://192.168.1.3:39520/description.xml -> HTTP 200
+GET http://10.0.0.3:39520/description.xml -> HTTP 200
 ```
 
-- 服务端自动补全 `<URLBase>http://192.168.1.3:39520</URLBase>`；服务 URL 与 SCPD 均可访问。
+- 服务端自动补全 `<URLBase>http://10.0.0.3:39520</URLBase>`；服务 URL 与 SCPD 均可访问。
 
 ### 2.4 主机 SOAP 联调（主机作为控制点）
 
@@ -93,10 +93,10 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 | 步骤 | 结果 |
 |---|---|
 | 小米 17 SSDP 发现 | 6 条 SSDP 记录，其中 1 个 MediaRenderer 候选 |
-| 目标识别 | `老石头 DMR @ http://192.168.1.3:39520/description.xml` |
-| 描述解析 | 受控 HTTP 获取，解析出 `controlURL=http://192.168.1.3:39520/dlna/avtransport/control` |
+| 目标识别 | `老石头 DMR @ http://10.0.0.3:39520/description.xml` |
+| 描述解析 | 受控 HTTP 获取，解析出 `controlURL=http://10.0.0.3:39520/dlna/avtransport/control` |
 | `SetAVTransportURI` + `Play` | 均返回 HTTP 200 |
-| 跨机拉流 | Mi 10 Pro DMR 从小米 17 的 `http://192.168.1.6:40175/tone.wav` 请求 HEAD/Range（零拷贝源在小米 17，日志可见） |
+| 跨机拉流 | Mi 10 Pro DMR 从小米 17 的 `http://10.0.0.6:40175/tone.wav` 请求 HEAD/Range（零拷贝源在小米 17，日志可见） |
 | 状态 | Mi 10 Pro DMR 进入 `PLAYING`，`GetTransportInfo` 返回 `PLAYING` |
 | 时长/进度 | `TrackDuration=00:00:30`；刚起播时 `RelTime=00:00:00`（1s 内，属正常） |
 | Stop | HTTP 200；Mi 10 Pro DMR 回到 `STOPPED` |
@@ -108,7 +108,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 
 | 要求 | 落实 |
 |---|---|
-| 换 Wi-Fi 后 IP 变化 | `DmrDevice.start()` / `DmsDevice.startDevice()` 内部调用 `NetworkAddresses.findLan()` 实时解析当前局域网 IPv4，调用方不能再传入旧 IP；小米 17 复测自动绑定 `192.168.1.6`。全仓库 app 代码无写死 `192.168/10.x/172.16-31` 地址。Wi-Fi 切换由 NetworkGate 结束会话，下一次启动重新解析。 |
+| 换 Wi-Fi 后 IP 变化 | `DmrDevice.start()` / `DmsDevice.startDevice()` 内部调用 `NetworkAddresses.findLan()` 实时解析当前局域网 IPv4，调用方不能再传入旧 IP；小米 17 复测自动绑定 `10.0.0.6`。全仓库 app 代码无写死 `192.168/10.x/172.16-31` 地址。Wi-Fi 切换由 NetworkGate 结束会话，下一次启动重新解析。 |
 | Android 13+ 局域网权限 | debug manifest 已声明 `NEARBY_WIFI_DEVICES`（`neverForLocation`），安装后 `granted=false`；当前 SSDP 走 `CHANGE_WIFI_MULTICAST_STATE` + `MulticastLock`，不依赖该权限。release 在角色启用时请求，并列入上架权限清单；targetSdk 36 本地网络权限新规按官方文档复核。 |
 | 给 DMR 的 URL 带正确后缀 | 新增 `MediaProtocolInfo`：源文件名扩展名优先、MIME 兜底；`ensureMediaSuffix` 保留 query、已有后缀不重复追加；DMS 的 token URL 使用 `mediaFileName(id, name, mime)`。7 个 JVM 用例通过。 |
 
@@ -117,10 +117,10 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 **测试音 DMS（小米 17，测试曲库兜底）**
 
 - 主机 SSDP `ST=urn:schemas-upnp-org:device:MediaServer:1` 发现：
-  `LOCATION=http://192.168.1.6:39520/description.xml`。
+  `LOCATION=http://10.0.0.6:39520/description.xml`。
 - description HTTP 200；ContentDirectory `Browse` 根对象返回 1 个专辑，专辑返回 1 个曲目。
 - DIDL 中的媒体 URL 形如
-  `http://192.168.1.6:39520/dlna/media/<token>/a0-t0.wav`：动态 IP、128-bit token、`.wav` 后缀齐全。
+  `http://10.0.0.6:39520/dlna/media/<token>/a0-t0.wav`：动态 IP、128-bit token、`.wav` 后缀齐全。
 - HEAD：`200`，`Content-Type=audio/wav`，`Content-Length=5292044`，`Accept-Ranges=bytes`，DLNA `contentFeatures` 正确。
 - Range `bytes=1000-1999`：`206`，`Content-Length=1000`，`Content-Range=bytes 1000-1999/5292044`，实际下载 1000 字节。
 - 开区间 `bytes=5290000-`：`206`，长度 2044；越界 Range 返回 `416`；错误 token 返回 `400`。
@@ -140,13 +140,13 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 
 - 极简/沉浸/高保真三个主界面均新增 `DLNA` 入口，进入正式 `DLNA 局域网` 页面。
 - 页面包含：当前局域网 IP、发送者/接收者/保持离线角色卡、角色说明、仅局域网声明、All Files Access 与 Nearby Wi-Fi 权限状态/授权入口、DMS 启停、DMR 最小启停。
-- 实测：选择「发送者」后权限提示正确；授予权限并放入测试 WAV 后，DMS 从正式 UI 启动成功，显示 `1 张专辑 / 1 首曲目` 和 `http://192.168.1.6:39520/description.xml`。
+- 实测：选择「发送者」后权限提示正确；授予权限并放入测试 WAV 后，DMS 从正式 UI 启动成功，显示 `1 张专辑 / 1 首曲目` 和 `http://10.0.0.6:39520/description.xml`。
 - 主清单已加入 INTERNET / ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE / CHANGE_WIFI_MULTICAST_STATE / NEARBY_WIFI_DEVICES，README/关于页隐私说明已同步为「默认离线、DLNA 可选、仅局域网」。
 
 **VLC 兼容性**
 
 - VLC 3.7 Beta 1 的 Browse 页面只显示 SMB；日志显示它启动了 libupnp（`Initializating libupnp on 'wlan0'`），随后 `libvlc services discovery: search timeout`，未列出 DMS。
-- 同一时刻主机 M-SEARCH 能发现 Mi 10 Pro 的 DMS（`LOCATION=http://192.168.1.3:39520/description.xml`），说明 DMS 的 SSDP 正常；VLC 未持有 Android MulticastLock，Wi-Fi 组播过滤是更可能的原因。
+- 同一时刻主机 M-SEARCH 能发现 Mi 10 Pro 的 DMS（`LOCATION=http://10.0.0.3:39520/description.xml`），说明 DMS 的 SSDP 正常；VLC 未持有 Android MulticastLock，Wi-Fi 组播过滤是更可能的原因。
 - 用 VLC 直接打开 DMS 的 FLAC URL（ACTION_VIEW）后，DMS 日志出现 `DMS Range: 0-130874259/130874260`，VLC 读到曲目元数据（title=Amani），证明第三方播放器可通过本 DMS 的 Range 端点拉流；但 VLC 的 UPnP **浏览**未完成，M2 第三方控制点验收仍需 BubbleUPnP 或带 MulticastLock 的控制点。
 
 **开源控制点尝试**
@@ -159,7 +159,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 ### 2.10 自动角色弹窗（NetworkGate）
 
 - `NetworkGate` 监听 ConnectivityManager；检测到 Wi-Fi/以太网私有 IPv4 后，按「接口名:IP」去重，每个新局域网会话只触发一次。
-- 小米 17 启动 App 时立即弹出「选择本机 DLNA 角色」，显示当前 IP `192.168.1.6`、发送者/接收者说明、「保持离线」以及“仅局域网、每次重新选择、同一连接一个角色”的说明。
+- 小米 17 启动 App 时立即弹出「选择本机 DLNA 角色」，显示当前 IP `10.0.0.6`、发送者/接收者说明、「保持离线」以及“仅局域网、每次重新选择、同一连接一个角色”的说明。
 - 选择「发送者」后自动进入正式 DLNA 页面，角色卡显示“已选择”；权限卡显示 All Files Access 已授权、Nearby Wi-Fi 未授权（可点授权）。
 - 网络断开/变化时 `LanSessionController` 关闭弹窗、清空当前角色并停止 DMS/DMR；下一次连接重新弹窗（代码路径已实现，未通过真实 Wi-Fi 切换复测）。
 
@@ -173,7 +173,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
   - 投送、暂停/继续、停止、Seek、音量、1 秒进度轮询。
 - 投送媒体 URL 由当前 DMS 的 token 端点生成，因此要求先启动「曲库共享」；DMC 开始投送会停止本地播放。
 - 小米 17（DMC）→ Mi 10 Pro（DMR）实测：
-  - 发现 1 个 MediaRenderer（`老石头 DMR @ 192.168.1.3`）；
+  - 发现 1 个 MediaRenderer（`老石头 DMR @ 10.0.0.3`）；
   - 选择 `DMC-Test/test.wav` 投送；
   - DMS 日志出现 `Range: 0-5292043/5292044`、`100238-5292043/5292044`；
   - Mi 10 Pro DMR：`STOPPED → TRANSITIONING → PLAYING`；
@@ -226,7 +226,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 **真实 Wi-Fi 切换（Xiaomi 17）**
 
 - `svc wifi disable`：DMR HTTP 端口不再可达；Wi-Fi 关闭后一切 DLNA 服务随会话停止。
-- `svc wifi enable`：重连后**未选角色前** `http://192.168.1.6:39520` 连接失败（服务确实已停止，而非仅网络不可达）；角色弹窗重新出现「已接入局域网：192.168.1.6」。
+- `svc wifi enable`：重连后**未选角色前** `http://10.0.0.6:39520` 连接失败（服务确实已停止，而非仅网络不可达）；角色弹窗重新出现「已接入局域网：10.0.0.6」。
 - NetworkGate「新会话→弹窗、断网→停服务」路径真实复测通过。
 
 ### 2.16 M3 收尾：SetNextAVTransportURI 自动切歌修复
@@ -271,7 +271,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 
 ### 2.19 M4：小米 HyperOS 息屏冻结与 DMS 长驻（2026-11-01）
 
-**现象**：DMS（`specialUse` FGS）在小米 17 上息屏后完全不可达；主机 curl/ping 超时，手机自连 `192.168.1.9:39520` 也超时（路由 `local ... dev lo`）。但进程存活、41 个线程均为 S 状态、FGS `isForeground=true`、WifiLock（`laoshitou-dlna`）与 MulticastLock 均被持有。
+**现象**：DMS（`specialUse` FGS）在小米 17 上息屏后完全不可达；主机 curl/ping 超时，手机自连 `10.0.0.9:39520` 也超时（路由 `local ... dev lo`）。但进程存活、41 个线程均为 S 状态、FGS `isForeground=true`、WifiLock（`laoshitou-dlna`）与 MulticastLock 均被持有。
 
 **定位**：
 - 对照实验：同网段、同息屏状态下，shell UID 的临时监听端口可从主机连通；应用 UID 下新建的任意监听端口（`run-as ... nc -l`）均不可达 → 排除 Wi-Fi/路由/组播，定位到 UID 级网络切断。
@@ -290,7 +290,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 
 ### 2.20 M4：30 分钟 DMR 长跑与无外网流量取证（2026-11-01）
 
-**环境**：主机 `HostProbe serve` 提供 30 秒 WAV（Range/206，`192.168.1.8:18099`）；小米 17 生产 DMR（`192.168.1.9:39520`，`mediaPlayback` FGS + WifiLock/MulticastLock），息屏 Dozing，省电策略=无限制；每 20 秒 SOAP 轮询 `GetTransportInfo`/`GetPositionInfo`，每 60 秒拉 512KB Range 切片。
+**环境**：主机 `HostProbe serve` 提供 30 秒 WAV（Range/206，`10.0.0.8:18099`）；小米 17 生产 DMR（`10.0.0.9:39520`，`mediaPlayback` FGS + WifiLock/MulticastLock），息屏 Dozing，省电策略=无限制；每 20 秒 SOAP 轮询 `GetTransportInfo`/`GetPositionInfo`，每 60 秒拉 512KB Range 切片。
 
 **结果**：
 - 90/90 采样完成，`restarts=45`（30 秒音轨自然播完后自动重播），`anomalies=0`；所有 Range 响应均为 `206 524288`；无 SOAP 超时/状态异常。
@@ -298,7 +298,7 @@ STOPPED -> TRANSITIONING -> PLAYING -> PAUSED_PLAYBACK -> PLAYING -> STOPPED
 - 进程存活、FGS 保持；未出现进程被杀或冻结。
 
 **无外网流量取证（Wireshark 替代）**：主机未安装 Wireshark/tshark。用 `run-as` 读取应用 `fd` 中的 socket inode，与 shell 可读的 `/proc/net/{tcp,tcp6,udp,udp6}` 按 inode 匹配，13 次采样（约 24 分钟）结果：
-- 仅见 DMR 监听 `192.168.1.9:39520`、到主机 `192.168.1.8:18099` 的 TCP 连接（每次 Range 请求新建）、SSDP 的 UDP 1900 监听；
+- 仅见 DMR 监听 `10.0.0.9:39520`、到主机 `10.0.0.8:18099` 的 TCP 连接（每次 Range 请求新建）、SSDP 的 UDP 1900 监听；
 - **0 个非私有远端地址**（脚本对非 RFC1918/loopback/unspecified/multicast 远端标记 `NON-PRIVATE`）。
 - 结论：测试期间应用无对外网连接；Wireshark 原始抓包待主机安装 tshark/镜像端口后补。
 
@@ -410,12 +410,12 @@ PSS/Java Heap/Native Heap；Oboe 延迟/underrun/XRuns 每 10 秒由
 ### 2.24 M3/M4：第三方渲染器互操作首测（Kodi 21.3，2026-11-02）
 
 **环境**
-- 发送端：Mi 10 Pro（Android 13，`192.168.1.9`），老石头 v1.3 debug（DMS + DMC）。
+- 发送端：Mi 10 Pro（Android 13，`10.0.0.9`），老石头 v1.3 debug（DMS + DMC）。
 - 第三方渲染器：Kodi 21.3 Omega arm64（同一台 Mi 10 Pro，设置 → 服务 →
   UPnP/DLNA → 开启 `Enable UPnP support` 与 `Allow remote control via UPnP`），
-  设备描述为 `Kodi (mi-10-pro)` @ `http://192.168.1.9:1808/`，含
+  设备描述为 `Kodi (mi-10-pro)` @ `http://10.0.0.9:1808/`，含
   AVTransport / ConnectionManager / RenderingControl。
-- 主机：`192.168.1.8`，用于 SSDP 探测与 SOAP 观测。
+- 主机：`10.0.0.8`，用于 SSDP 探测与 SOAP 观测。
 
 **发现与投送**
 - 正式 UI「发现投送设备」：`SSDP 发现 18 台设备`、`DMC 候选 MediaRenderer: 2`、
@@ -424,7 +424,7 @@ PSS/Java Heap/Native Heap；Oboe 延迟/underrun/XRuns 每 10 秒由
   `GetProtocolInfo`、`SetAVTransportURI`、`Play` 均 HTTP 200；Kodi
   `GetTransportInfo=PLAYING`、`TrackDuration=00:04:48`；DMS 连续收到
   `Range: 0-130874259/130874260` 等请求；Kodi `TrackURI` 为 DMS token URL
-  `http://192.168.1.9:39520/dlna/media/<token>/cast.flac`。
+  `http://10.0.0.9:39520/dlna/media/<token>/cast.flac`。
 
 **控制与恢复**
 - 暂停 → Kodi `PAUSED_PLAYBACK`；继续 → `PLAYING`。
@@ -515,22 +515,22 @@ adb -s <serial> shell am start -n com.gu.laoshitou/com.gu.laoshitou.dlna.M0Activ
 adb -s <serial> shell appops set com.gu.laoshitou MANAGE_EXTERNAL_STORAGE allow
 
 # 从主机访问描述
-curl http://192.168.1.3:39520/description.xml
-curl http://192.168.1.6:39520/description.xml
+curl http://10.0.0.3:39520/description.xml
+curl http://10.0.0.6:39520/description.xml
 
 # ContentDirectory Browse（示例）
-curl -X POST http://192.168.1.6:39520/dlna/contentdirectory/control \
+curl -X POST http://10.0.0.6:39520/dlna/contentdirectory/control \
   -H 'Content-Type: text/xml; charset="utf-8"' \
   -H 'SOAPACTION: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"' \
   --data-binary '<SOAP Envelope...>'
 
 # 媒体 Range（URL 来自 Browse 返回的 <res>）
-curl -I 'http://192.168.1.6:39520/dlna/media/<token>/a0-t0.wav'
+curl -I 'http://10.0.0.6:39520/dlna/media/<token>/a0-t0.wav'
 curl -H 'Range: bytes=1000-1999' -o slice.bin \
-  'http://192.168.1.6:39520/dlna/media/<token>/a0-t0.wav'
+  'http://10.0.0.6:39520/dlna/media/<token>/a0-t0.wav'
 
 # 主机作为控制点
-curl -X POST http://192.168.1.3:39520/dlna/avtransport/control \
+curl -X POST http://10.0.0.3:39520/dlna/avtransport/control \
   -H 'Content-Type: text/xml; charset="utf-8"' \
   -H 'SOAPACTION: "urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"' \
   --data-binary '<SOAP Envelope...>'

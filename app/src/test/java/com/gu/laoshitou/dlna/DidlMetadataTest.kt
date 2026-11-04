@@ -24,7 +24,7 @@ class DidlMetadataTest {
     @Test
     fun buildsStandardAudioItemMetadata() {
         val title = "Amani & <Live> \"1991\""
-        val mediaUrl = "http://192.168.1.9:39520/dlna/media/token/cast.flac?x=1&y=2"
+        val mediaUrl = "http://10.0.0.9:39520/dlna/media/token/cast.flac?x=1&y=2"
         val xml = DmcClient.buildDidlMetadata(
             title = title,
             mediaUrl = mediaUrl,
@@ -48,7 +48,7 @@ class DidlMetadataTest {
     fun omitsSizeWhenUnknown() {
         val xml = DmcClient.buildDidlMetadata(
             title = "Track",
-            mediaUrl = "http://192.168.1.9:39520/dlna/media/token/cast.mp3",
+            mediaUrl = "http://10.0.0.9:39520/dlna/media/token/cast.mp3",
             mime = "audio/mpeg",
         )
         val document = parse(xml)
@@ -62,7 +62,7 @@ class DidlMetadataTest {
     fun escapesXmlSensitiveCharacters() {
         val xml = DmcClient.buildDidlMetadata(
             title = "a<b>c&d",
-            mediaUrl = "http://192.168.1.9:39520/dlna/media/token/cast.flac",
+            mediaUrl = "http://10.0.0.9:39520/dlna/media/token/cast.flac",
             mime = "audio/flac",
         )
         assertFalse(xml.contains("a<b>"))
@@ -72,14 +72,14 @@ class DidlMetadataTest {
     @Test
     fun detectsSameDeviceRenderer() {
         val renderer = DmcClient.Renderer(
-            location = URI("http://192.168.1.9:1808/"),
+            location = URI("http://10.0.0.9:1808/"),
             friendlyName = "Kodi",
-            avControlUrl = URI("http://192.168.1.9:1808/AVTransport/x/control.xml"),
+            avControlUrl = URI("http://10.0.0.9:1808/AVTransport/x/control.xml"),
             renderingControlUrl = null,
             connectionManagerUrl = null,
         )
-        assertTrue(DmcClient.isLocalRenderer(renderer, "192.168.1.9"))
-        assertFalse(DmcClient.isLocalRenderer(renderer, "192.168.1.8"))
+        assertTrue(DmcClient.isLocalRenderer(renderer, "10.0.0.9"))
+        assertFalse(DmcClient.isLocalRenderer(renderer, "10.0.0.8"))
         assertFalse(DmcClient.isLocalRenderer(renderer, null))
         assertFalse(DmcClient.isLocalRenderer(renderer, " "))
     }

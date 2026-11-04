@@ -92,6 +92,6 @@ class CatalogSettingsStore(context: Context) {
         const val KEY_ALIAS = "laoshitou_catalog_api"
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val DEFAULT_BASE = "http://192.168.1.10:9007"
+        const val DEFAULT_BASE = ""
     }
 }

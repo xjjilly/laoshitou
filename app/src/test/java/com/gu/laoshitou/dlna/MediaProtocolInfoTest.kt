@@ -31,31 +31,31 @@ class MediaProtocolInfoTest {
 
     @Test
     fun appendsSourceExtensionAndPreservesQuery() {
-        val uri = URI("http://192.168.1.3:8080/dlna/media/token/42?x=1")
+        val uri = URI("http://10.0.0.3:8080/dlna/media/token/42?x=1")
         assertEquals(
-            "http://192.168.1.3:8080/dlna/media/token/42.flac?x=1",
+            "http://10.0.0.3:8080/dlna/media/token/42.flac?x=1",
             MediaProtocolInfo.ensureMediaSuffix(uri, "Track.flac", "audio/flac").toString(),
         )
     }
 
     @Test
     fun appendsMimeExtensionWhenFileNameUnknown() {
-        val uri = URI("http://192.168.1.3:8080/stream")
+        val uri = URI("http://10.0.0.3:8080/stream")
         assertEquals(
-            "http://192.168.1.3:8080/stream.mp3",
+            "http://10.0.0.3:8080/stream.mp3",
             MediaProtocolInfo.ensureMediaSuffix(uri, null, "audio/mpeg").toString(),
         )
     }
 
     @Test
     fun doesNotDoubleAppendKnownSuffix() {
-        val uri = URI("http://192.168.1.3:8080/a.flac?token=1")
+        val uri = URI("http://10.0.0.3:8080/a.flac?token=1")
         assertEquals(uri, MediaProtocolInfo.ensureMediaSuffix(uri, "a.mp3", "audio/mpeg"))
     }
 
     @Test
     fun leavesUnknownUrlsUntouched() {
-        val uri = URI("http://192.168.1.3:8080/stream")
+        val uri = URI("http://10.0.0.3:8080/stream")
         assertEquals(uri, MediaProtocolInfo.ensureMediaSuffix(uri, "cover.jpg", "image/jpeg"))
     }
 
