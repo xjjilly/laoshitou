@@ -16,6 +16,7 @@ import android.os.Environment
 import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
+import android.widget.Toast
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
@@ -39,6 +40,7 @@ import com.gu.laoshitou.catalog.CatalogTrack
 import com.gu.laoshitou.catalog.PlayedTrackStore
 import com.gu.laoshitou.nas.WebDavClient
 import com.gu.laoshitou.nas.WebDavCredentialStore
+import com.gu.laoshitou.ui.AppShell
 import com.gu.laoshitou.ui.CatalogScreen
 import com.gu.laoshitou.ui.DlnaController
 import com.gu.laoshitou.ui.DlnaRole
@@ -1511,11 +1513,28 @@ private fun AppRoot() {
             onClose = { state.aboutOpen = false },
         )
     } else {
-        when (state.uiVersion) {
-            UiVersion.Minimal -> MinimalPlayerScreen(state, actions)
-            UiVersion.Immersive -> ImmersivePlayerScreen(state, actions)
-            UiVersion.Hifi -> HifiDashboardScreen(state, actions)
-        }
+        AppShell(
+            state = state,
+            actions = actions,
+            dlna = dlnaController,
+            versionName = versionName,
+            onPlayCatalogTrack = { track, queue, index ->
+                scope.launch {
+                    val error = beginCatalogPlayback(track, queue, index)
+                    if (error != null) {
+                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onCastCatalogTrack = { track ->
+                scope.launch {
+                    val error = castCatalogTrack(track)
+                    if (error != null) {
+                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+        )
     }
 }
 
