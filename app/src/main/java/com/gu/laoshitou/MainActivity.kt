@@ -1021,6 +1021,7 @@ private fun AppRoot() {
             name = track.title + "." + track.format,
             size = track.fileSize,
             title = track.title,
+            albumId = track.albumId,
         )
     }
 

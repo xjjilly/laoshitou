@@ -95,6 +95,7 @@ class DlnaController(private val context: Context) {
     var casting by mutableStateOf(false)
     var castPaused by mutableStateOf(false)
     var castTitle by mutableStateOf("")
+    var castAlbumId by mutableStateOf<String?>(null)
     var castState by mutableStateOf("")
     var castPositionMs by mutableStateOf(0L)
     var castDurationMs by mutableStateOf(0L)
@@ -459,6 +460,7 @@ class DlnaController(private val context: Context) {
         name: String,
         size: Long,
         title: String,
+        albumId: String? = null,
     ): String? {
         if (size <= 0L) {
             return "服务器未提供文件大小，无法投送"
@@ -485,6 +487,7 @@ class DlnaController(private val context: Context) {
             isCollection = false,
             size = size,
         )
+        castAlbumId = albumId
         castTrack(WebDavResource(client, entry), title)
         return if (casting || dmcFormatWarning != null) {
             null
@@ -629,6 +632,7 @@ class DlnaController(private val context: Context) {
         castState = ""
         castPositionMs = 0L
         castDurationMs = 0L
+        castAlbumId = null
         castOffline = false
         mediaSession.clear()
         updateRadioLocks()
@@ -671,6 +675,9 @@ class DlnaController(private val context: Context) {
                 val position = withContext(Dispatchers.IO) {
                     runCatching { dmcClient.getPositionInfo(renderer) }.getOrNull()
                 }
+                val volume = withContext(Dispatchers.IO) {
+                    runCatching { dmcClient.getVolume(renderer) }.getOrNull()
+                }
                 val reachable = info?.successful == true || position?.successful == true
                 if (reachable) {
                     consecutiveFailures = 0
@@ -688,13 +695,24 @@ class DlnaController(private val context: Context) {
                     }
                 }
                 if (info?.successful == true) {
-                    DmcClient.extractTag(info.body, "CurrentTransportState")?.let { castState = it }
+                    DmcClient.extractTag(info.body, "CurrentTransportState")?.let { state ->
+                        castState = state
+                        when (state) {
+                            "PAUSED_PLAYBACK" -> castPaused = true
+                            "PLAYING" -> castPaused = false
+                        }
+                    }
                 }
                 if (position?.successful == true) {
                     DmcClient.timeToMillis(DmcClient.extractTag(position.body, "RelTime"))
                         ?.let { castPositionMs = it }
                     DmcClient.timeToMillis(DmcClient.extractTag(position.body, "TrackDuration"))
                         ?.let { castDurationMs = it }
+                }
+                if (volume?.successful == true) {
+                    DmcClient.extractTag(volume.body, "CurrentVolume")
+                        ?.toIntOrNull()
+                        ?.let { castVolume = it.coerceIn(0, 100) }
                 }
                 if (role == DlnaRole.SENDER) {
                     mediaSession.updateDmc(

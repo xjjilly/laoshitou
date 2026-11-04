@@ -5,6 +5,7 @@ package com.gu.laoshitou.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -259,6 +261,13 @@ fun AppShell(
                                 onClick = { page = 0 },
                             )
                         }
+                        if (page == 0 && dlna.casting) {
+                            CastRemoteCard(
+                                dlna = dlna,
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -397,14 +406,34 @@ private fun HomeScreen(
     durationMs: Long,
     onMenu: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var dragPositionMs by remember { mutableStateOf<Long?>(null) }
-    val shownPositionMs = dragPositionMs ?: positionMs
+    val castActive = dlna.casting
+    val shownPositionMs = if (castActive) dlna.castPositionMs else (dragPositionMs ?: positionMs)
+    val shownDurationMs = if (castActive) dlna.castDurationMs else durationMs
+    val displayTitle = when {
+        castActive -> dlna.castTitle.ifBlank { "正在投送" }
+        state.trackName.isBlank() -> "未选择音频"
+        else -> state.trackName
+    }
+    val displaySubtitle = if (castActive) {
+        "投送到 ${dlna.selectedRenderer?.friendlyName ?: "PC"} · PC 端实时状态"
+    } else {
+        subtitleFor(state.currentPath)
+    }
+    val nowCover = rememberNowPlayingCover(state, dlna)
+    val fraction = if (shownDurationMs > 0) {
+        (shownPositionMs.toFloat() / shownDurationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
     ) {
         AppTopBar(
             title = "正在播放",
-            subtitle = sourceLabel(state),
+            subtitle = if (castActive) "投送中" else sourceLabel(state),
             onMenu = onMenu,
             trailing = {
                 CastChip(dlna)
@@ -412,18 +441,31 @@ private fun HomeScreen(
         )
         Spacer(Modifier.height(4.dp))
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(26.dp))
-                .background(coverBrush(0)),
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(26.dp)),
         ) {
-            Box(
-                Modifier.align(Alignment.Center).size(92.dp).clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.08f)),
-            )
+            if (nowCover != null) {
+                Image(
+                    bitmap = nowCover,
+                    contentDescription = "正在播放封面",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxSize().background(coverBrush(0)),
+                ) {
+                    Box(
+                        Modifier.align(Alignment.Center).size(92.dp).clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.08f)),
+                    )
+                }
+            }
             Text(
-                if (state.playing || state.paused) {
-                    "源 ${state.sourceRate} Hz · 输出 ${state.outputRate} Hz"
-                } else {
-                    "等待播放"
+                when {
+                    castActive -> "投送中 · ${dlna.castState.ifBlank { "已连接" }}"
+                    state.playing || state.paused ->
+                        "源 ${state.sourceRate} Hz · 输出 ${state.outputRate} Hz"
+                    else -> "等待播放"
                 },
                 color = Color.White.copy(alpha = 0.8f),
                 fontSize = 10.sp,
@@ -432,7 +474,7 @@ private fun HomeScreen(
         }
         Spacer(Modifier.height(18.dp))
         Text(
-            if (state.trackName.isBlank()) "未选择音频" else state.trackName,
+            displayTitle,
             color = AppText,
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
@@ -440,7 +482,7 @@ private fun HomeScreen(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            subtitleFor(state.currentPath),
+            displaySubtitle,
             color = AppMuted,
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 6.dp),
@@ -449,14 +491,28 @@ private fun HomeScreen(
             Modifier.padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Chip(
-                sourceLabel(state),
-                if (state.playing || state.paused) AppGreen else AppDim,
-            )
-            Chip("输出 ${state.outputRate} Hz", AppBlue)
-            if (state.processingActive) Chip("DSP", AppGold)
+            if (castActive) {
+                Chip("投送中", AppBlue)
+                Chip(dlna.selectedRenderer?.friendlyName ?: "PC", AppBlue)
+                Chip(
+                    when (dlna.castState) {
+                        "PLAYING" -> "播放中"
+                        "PAUSED_PLAYBACK" -> "已暂停"
+                        "TRANSITIONING" -> "缓冲中"
+                        else -> "已连接"
+                    },
+                    AppBlue,
+                )
+            } else {
+                Chip(
+                    sourceLabel(state),
+                    if (state.playing || state.paused) AppGreen else AppDim,
+                )
+                Chip("输出 ${state.outputRate} Hz", AppBlue)
+                if (state.processingActive) Chip("DSP", AppGold)
+            }
         }
-        if (!state.playing && !state.paused) {
+        if (!castActive && !state.playing && !state.paused) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -480,15 +536,29 @@ private fun HomeScreen(
             }
         }
         Spacer(Modifier.height(20.dp))
-        if (durationMs > 0) {
+        if (castActive) {
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(4.dp)),
+                color = AppBlue,
+                trackColor = AppSurface2,
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(formatMs(shownPositionMs), color = AppDim, fontSize = 10.sp)
+                Text(formatMs(shownDurationMs), color = AppDim, fontSize = 10.sp)
+            }
+        } else if (shownDurationMs > 0) {
             Slider(
-                value = shownPositionMs.toFloat().coerceIn(0f, durationMs.toFloat()),
+                value = shownPositionMs.toFloat().coerceIn(0f, shownDurationMs.toFloat()),
                 onValueChange = { dragPositionMs = it.toLong() },
                 onValueChangeFinished = {
                     dragPositionMs?.let { NativeBridge.seekPlayback(it) }
                     dragPositionMs = null
                 },
-                valueRange = 0f..durationMs.toFloat(),
+                valueRange = 0f..shownDurationMs.toFloat(),
                 colors = SliderDefaults.colors(
                     thumbColor = AppGold,
                     activeTrackColor = AppGold,
@@ -501,7 +571,7 @@ private fun HomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(formatMs(shownPositionMs), color = AppDim, fontSize = 10.sp)
-                Text(formatMs(durationMs), color = AppDim, fontSize = 10.sp)
+                Text(formatMs(shownDurationMs), color = AppDim, fontSize = 10.sp)
             }
         } else {
             LinearProgressIndicator(
@@ -524,21 +594,27 @@ private fun HomeScreen(
             }
             Surface(
                 modifier = Modifier.size(64.dp).clickable {
-                    if (state.playing || state.paused) {
+                    if (castActive) {
+                        scope.launch { dlna.pauseOrResumeCast() }
+                    } else if (state.playing || state.paused) {
                         actions.togglePause()
                     } else {
                         actions.startPath()
                     }
                 },
                 shape = CircleShape,
-                color = AppGold,
+                color = if (castActive) AppBlue else AppGold,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        if (state.playing && !state.paused) Icons.Rounded.Pause
-                        else Icons.Rounded.PlayArrow,
+                        when {
+                            castActive && dlna.castPaused -> Icons.Rounded.PlayArrow
+                            castActive -> Icons.Rounded.Pause
+                            state.playing && !state.paused -> Icons.Rounded.Pause
+                            else -> Icons.Rounded.PlayArrow
+                        },
                         contentDescription = "播放/暂停",
-                        tint = Color(0xFF1A1408),
+                        tint = if (castActive) Color(0xFF06131A) else Color(0xFF1A1408),
                         modifier = Modifier.size(30.dp),
                     )
                 }
@@ -550,10 +626,7 @@ private fun HomeScreen(
                 Icon(Icons.Rounded.Repeat, contentDescription = "循环", tint = AppDim)
             }
         }
-        if (dlna.casting) {
-            CastRemoteCard(dlna)
-        }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(if (castActive) 200.dp else 24.dp))
     }
 }
 
@@ -573,17 +646,19 @@ private fun CastChip(dlna: DlnaController) {
 }
 
 @Composable
-private fun CastRemoteCard(dlna: DlnaController) {
+private fun CastRemoteCard(dlna: DlnaController, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
-    val fraction = if (dlna.castDurationMs > 0) {
-        (dlna.castPositionMs.toFloat() / dlna.castDurationMs.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
+    var dragPositionMs by remember { mutableStateOf<Long?>(null) }
+    var dragVolume by remember { mutableStateOf<Int?>(null) }
+    val shownPositionMs = dragPositionMs ?: dlna.castPositionMs
+    val shownVolume = dragVolume ?: dlna.castVolume
+    val durationMs = dlna.castDurationMs.coerceAtLeast(1L)
+
     Card(
-        modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-        colors = CardDefaults.cardColors(containerColor = AppBlue.copy(alpha = 0.08f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppBlue.copy(alpha = 0.3f)),
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF10202A)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppBlue.copy(alpha = 0.45f)),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -598,9 +673,17 @@ private fun CastRemoteCard(dlna: DlnaController) {
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${formatMs(dlna.castPositionMs)} / ${formatMs(dlna.castDurationMs)}",
+                        "${dlna.selectedRenderer?.friendlyName ?: "PC"} · " +
+                            when (dlna.castState) {
+                                "PLAYING" -> "播放中"
+                                "PAUSED_PLAYBACK" -> "已暂停"
+                                "TRANSITIONING" -> "缓冲中"
+                                else -> dlna.castState.ifBlank { "已连接" }
+                            },
                         color = AppMuted,
                         fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 TextButton(onClick = { scope.launch { dlna.pauseOrResumeCast() } }) {
@@ -610,12 +693,61 @@ private fun CastRemoteCard(dlna: DlnaController) {
                     Text("停止", color = AppMuted, fontSize = 11.sp)
                 }
             }
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(3.dp),
-                color = AppBlue,
-                trackColor = AppSurface2,
+
+            Slider(
+                value = shownPositionMs.toFloat().coerceIn(0f, durationMs.toFloat()),
+                onValueChange = { dragPositionMs = it.toLong() },
+                onValueChangeFinished = {
+                    dragPositionMs?.let { target ->
+                        scope.launch { dlna.seekCast(target) }
+                    }
+                    dragPositionMs = null
+                },
+                valueRange = 0f..durationMs.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = AppBlue,
+                    activeTrackColor = AppBlue,
+                    inactiveTrackColor = AppSurface2,
+                ),
+                modifier = Modifier.fillMaxWidth().height(26.dp),
             )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 0.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(formatMs(shownPositionMs), color = AppDim, fontSize = 10.sp)
+                Text(formatMs(dlna.castDurationMs), color = AppDim, fontSize = 10.sp)
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Rounded.VolumeUp,
+                    contentDescription = "音量",
+                    tint = AppMuted,
+                    modifier = Modifier.size(18.dp),
+                )
+                Slider(
+                    value = shownVolume.toFloat().coerceIn(0f, 100f),
+                    onValueChange = { dragVolume = it.toInt().coerceIn(0, 100) },
+                    onValueChangeFinished = {
+                        dragVolume?.let { volume ->
+                            scope.launch { dlna.setCastVolume(volume) }
+                        }
+                        dragVolume = null
+                    },
+                    valueRange = 0f..100f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = AppBlue,
+                        activeTrackColor = AppBlue.copy(alpha = 0.7f),
+                        inactiveTrackColor = AppSurface2,
+                    ),
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).height(24.dp),
+                )
+                Text("$shownVolume", color = AppMuted, fontSize = 10.sp, modifier = Modifier.width(26.dp))
+            }
         }
     }
 }
@@ -1074,8 +1206,65 @@ private fun AlbumTile(
     }
 }
 
-private fun loadLocalCover(musicDir: String, relativePath: String): Bitmap? {
-    val dir = File(musicDir, relativePath)
+private fun loadLocalCover(musicDir: String, relativePath: String): Bitmap? =
+    loadCoverFromDirectory(File(musicDir, relativePath))
+
+@Composable
+private fun rememberNowPlayingCover(state: PlayerState, dlna: DlnaController): ImageBitmap? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val settings = remember { CatalogSettingsStore(context).load() }
+    var cover by remember { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(
+        state.currentPath,
+        state.trackName,
+        state.catalogQueueIndex,
+        dlna.casting,
+        dlna.castAlbumId,
+    ) {
+        cover = null
+        val path = state.currentPath
+        val castAlbumId = if (dlna.casting) dlna.castAlbumId else null
+        if (path.isBlank() && castAlbumId == null) return@LaunchedEffect
+        val bitmap = withContext(Dispatchers.IO) {
+            when {
+                castAlbumId != null ->
+                    loadCatalogCover(settings.baseUrl, settings.token, castAlbumId)
+                path.startsWith("http") -> {
+                    val track = state.catalogQueue.getOrNull(state.catalogQueueIndex)
+                    track?.let {
+                        loadCatalogCover(settings.baseUrl, settings.token, it.albumId)
+                    }
+                }
+                else -> loadCoverFromFile(File(path))
+            }
+        }
+        if (bitmap != null) {
+            cover = bitmap.asImageBitmap()
+        }
+    }
+    return cover
+}
+
+private suspend fun loadCatalogCover(baseUrl: String, token: String, albumId: String): Bitmap? {
+    if (baseUrl.isBlank() || token.isBlank()) return null
+    val client = CatalogClient(baseUrl, token)
+    return try {
+        val detail = client.getAlbum(albumId)
+        val bytes = client.loadCover(detail.album)
+        if (bytes != null) {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } else {
+            null
+        }
+    } catch (_: Exception) {
+        null
+    } finally {
+        client.close()
+    }
+}
+
+private fun loadCoverFromDirectory(dir: File): Bitmap? {
     val candidates = listOf(
         "cover.jpg", "folder.jpg", "front.jpg", "album.jpg",
         "cover.png", "folder.png", "front.png",
@@ -1087,6 +1276,27 @@ private fun loadLocalCover(musicDir: String, relativePath: String): Bitmap? {
         }
     }
     return null
+}
+
+private fun loadCoverFromFile(file: File): Bitmap? {
+    file.parentFile?.let { dir ->
+        loadCoverFromDirectory(dir)?.let { return it }
+    }
+    return loadEmbeddedCover(file.absolutePath)
+}
+
+private fun loadEmbeddedCover(path: String): Bitmap? {
+    val retriever = MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(path)
+        retriever.embeddedPicture?.let { bytes ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }
+    } catch (_: Exception) {
+        null
+    } finally {
+        runCatching { retriever.release() }
+    }
 }
 
 // ---------------------------------------------------------------------------
