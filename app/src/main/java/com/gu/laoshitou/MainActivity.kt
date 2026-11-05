@@ -41,16 +41,11 @@ import com.gu.laoshitou.catalog.PlayedTrackStore
 import com.gu.laoshitou.nas.WebDavClient
 import com.gu.laoshitou.nas.WebDavCredentialStore
 import com.gu.laoshitou.ui.AppShell
-import com.gu.laoshitou.ui.CatalogScreen
 import com.gu.laoshitou.ui.DlnaController
 import com.gu.laoshitou.ui.DlnaRole
 import com.gu.laoshitou.ui.DlnaScreen
-import com.gu.laoshitou.ui.NasScreen
 import com.gu.laoshitou.ui.LanSessionController
 import com.gu.laoshitou.ui.RolePromptDialog
-import com.gu.laoshitou.ui.HifiDashboardScreen
-import com.gu.laoshitou.ui.ImmersivePlayerScreen
-import com.gu.laoshitou.ui.MinimalPlayerScreen
 import com.gu.laoshitou.ui.AboutScreen
 import com.gu.laoshitou.ui.AlbumItem
 import com.gu.laoshitou.ui.EqEditorFrequencies
@@ -1354,28 +1349,7 @@ private fun AppRoot() {
         setPlayMode = { state.playMode = it },
         setUiVersion = { state.uiVersion = it },
         setAboutOpen = { state.aboutOpen = it },
-        setDlnaOpen = {
-            state.dlnaOpen = it
-            if (it) {
-                state.nasOpen = false
-                state.catalogOpen = false
-            }
-        },
-        setNasOpen = {
-            state.nasOpen = it
-            if (it) {
-                state.dlnaOpen = false
-                state.catalogOpen = false
-            }
-        },
-        setCatalogOpen = {
-            state.catalogOpen = it
-            if (it) {
-                state.nasOpen = false
-                state.dlnaOpen = false
-                state.aboutOpen = false
-            }
-        },
+        setDlnaOpen = { state.dlnaOpen = it },
         setFilePath = { state.filePath = it },
         setEqPath = { state.eqPath = it },
         refreshLibrary = ::refreshLibrary,
@@ -1484,25 +1458,7 @@ private fun AppRoot() {
         )
     }
 
-    if (state.nasOpen) {
-        NasScreen(
-            onClose = { state.nasOpen = false },
-            onCast = { entry -> dlnaController.castNasEntry(entry) },
-        )
-    } else if (state.catalogOpen) {
-        CatalogScreen(
-            onClose = { state.catalogOpen = false },
-            controller = dlnaController,
-            onOpenDlna = {
-                state.catalogOpen = false
-                state.dlnaOpen = true
-            },
-            onPlayTrack = { track, queue, index ->
-                beginCatalogPlayback(track, queue, index)
-            },
-            onCastTrack = { track -> castCatalogTrack(track) },
-        )
-    } else if (state.dlnaOpen) {
+    if (state.dlnaOpen) {
         DlnaScreen(
             controller = dlnaController,
             playerState = state,

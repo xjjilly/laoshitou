@@ -47,7 +47,7 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -68,6 +68,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -94,6 +95,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -235,8 +238,6 @@ fun AppShell(
                             1 -> LibraryScreen(
                                 state = state,
                                 onMenu = { scope.launch { drawerState.open() } },
-                                onOpenNas = { actions.setNasOpen(true) },
-                                onOpenCatalog = { actions.setCatalogOpen(true) },
                                 onPlayTrack = { album, index ->
                                     actions.openAlbum(album.relativePath)
                                     actions.playTrack(index)
@@ -724,7 +725,7 @@ private fun CastRemoteCard(dlna: DlnaController, modifier: Modifier = Modifier) 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    Icons.Rounded.VolumeUp,
+                    Icons.AutoMirrored.Rounded.VolumeUp,
                     contentDescription = "音量",
                     tint = AppMuted,
                     modifier = Modifier.size(18.dp),
@@ -760,8 +761,6 @@ private fun CastRemoteCard(dlna: DlnaController, modifier: Modifier = Modifier) 
 private fun LibraryScreen(
     state: PlayerState,
     onMenu: () -> Unit,
-    onOpenNas: () -> Unit,
-    onOpenCatalog: () -> Unit,
     onPlayTrack: (AlbumItem, Int) -> Unit,
     onPlayCatalogTrack: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
     onCastCatalogTrack: (CatalogTrack) -> Unit,
@@ -774,8 +773,10 @@ private fun LibraryScreen(
     val localAlbums = state.albums
     val localCovers = remember { mutableStateMapOf<String, ImageBitmap>() }
 
-    val catalogSettings = remember { CatalogSettingsStore(context).load() }
-    val catalogClient = remember {
+    val catalogStore = remember { CatalogSettingsStore(context) }
+    var catalogSettings by remember { mutableStateOf(catalogStore.load()) }
+    var showCatalogSettings by remember { mutableStateOf(false) }
+    val catalogClient = remember(catalogSettings) {
         if (catalogSettings.baseUrl.isNotBlank() && catalogSettings.token.isNotBlank()) {
             CatalogClient(catalogSettings.baseUrl, catalogSettings.token)
         } else {
@@ -874,18 +875,18 @@ private fun LibraryScreen(
                         fontSize = 11.sp,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onOpenCatalog) {
-                        Text("旧版入口", color = AppGold, fontSize = 11.sp)
+                    TextButton(onClick = { showCatalogSettings = true }) {
+                        Text("配置", color = AppGold, fontSize = 11.sp)
                     }
-                    TextButton(onClick = onOpenNas) {
-                        Text("WebDAV", color = AppMuted, fontSize = 11.sp)
+                    TextButton(onClick = { catalogReload++ }) {
+                        Text("刷新", color = AppMuted, fontSize = 11.sp)
                     }
                 }
 
                 when {
                     catalogClient == null -> {
                         Text(
-                            "请先在旧版 SQL 曲库连接并保存地址与密码；之后这里会自动加载真实专辑与封面。",
+                            "点击“配置”填写 SQL API 地址与密码；保存后会自动加载专辑与封面。",
                             color = AppMuted,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -974,6 +975,89 @@ private fun LibraryScreen(
             },
             onCast = onCastCatalogTrack,
         )
+    }
+
+    if (showCatalogSettings) {
+        CatalogSettingsDialog(
+            initialUrl = catalogSettings.baseUrl,
+            initialPassword = catalogSettings.token,
+            onDismiss = { showCatalogSettings = false },
+            onSave = { url, password ->
+                catalogStore.save(url, password)
+                catalogSettings = catalogStore.load()
+                catalogAlbums = emptyList()
+                catalogCovers.clear()
+                catalogError = null
+                catalogReload++
+                showCatalogSettings = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun CatalogSettingsDialog(
+    initialUrl: String,
+    initialPassword: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var url by remember { mutableStateOf(initialUrl) }
+    var password by remember { mutableStateOf(initialPassword) }
+    var showPassword by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = AppSurface,
+            shape = RoundedCornerShape(18.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder),
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Text("NAS / SQL 曲库", color = AppText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "填写 SQL API 地址与密码；留空密码则保留原值。",
+                    color = AppMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("API 地址（http://NAS-IP:9007）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("密码") },
+                    singleLine = true,
+                    visualTransformation = if (showPassword) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        TextButton(onClick = { showPassword = !showPassword }) {
+                            Text(if (showPassword) "隐藏" else "显示", fontSize = 11.sp)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.padding(top = 12.dp)) {
+                    Button(
+                        onClick = { onSave(url, password) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppGold,
+                            contentColor = Color(0xFF1A1408),
+                        ),
+                    ) { Text("保存", fontSize = 12.sp) }
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedButton(onClick = onDismiss) { Text("取消", fontSize = 12.sp) }
+                }
+            }
+        }
     }
 }
 
@@ -1569,10 +1653,6 @@ private fun AppDrawer(
         }
         DrawerItem(label = "专注播放", onClick = onClose)
         DrawerSection("服务")
-        DrawerItem(label = "NAS 连接", trailing = if (state.albums.isNotEmpty()) "已扫描" else "未连接") {
-            onClose()
-            actions.setNasOpen(true)
-        }
         DrawerItem(label = "DLNA 设置") {
             onClose()
             actions.setDlnaOpen(true)

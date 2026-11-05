@@ -74,8 +74,6 @@ class PlayerState(
     var uiVersion by mutableStateOf(UiVersion.Minimal)
     var aboutOpen by mutableStateOf(false)
     var dlnaOpen by mutableStateOf(false)
-    var nasOpen by mutableStateOf(false)
-    var catalogOpen by mutableStateOf(false)
     var catalogQueue by mutableStateOf<List<CatalogTrack>>(emptyList())
     var catalogQueueIndex by mutableStateOf(-1)
 
@@ -201,8 +199,6 @@ data class PlayerActions(
     val setUiVersion: (UiVersion) -> Unit,
     val setAboutOpen: (Boolean) -> Unit,
     val setDlnaOpen: (Boolean) -> Unit,
-    val setNasOpen: (Boolean) -> Unit,
-    val setCatalogOpen: (Boolean) -> Unit,
     val setFilePath: (String) -> Unit,
     val setEqPath: (String) -> Unit,
 )
