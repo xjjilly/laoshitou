@@ -108,6 +108,10 @@ import com.gu.laoshitou.catalog.CatalogClient
 import com.gu.laoshitou.catalog.CatalogSettingsStore
 import com.gu.laoshitou.catalog.CatalogTrack
 import com.gu.laoshitou.catalog.PlayedTrackStore
+import com.gu.laoshitou.nas.WebDavAccount
+import com.gu.laoshitou.nas.WebDavAuthType
+import com.gu.laoshitou.nas.WebDavCredentialStore
+import com.gu.laoshitou.nas.WebDavUrl
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1005,14 +1009,58 @@ private fun CatalogSettingsDialog(
     var url by remember { mutableStateOf(initialUrl) }
     var password by remember { mutableStateOf(initialPassword) }
     var showPassword by remember { mutableStateOf(false) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val savedWebDav = remember { WebDavCredentialStore(context).load() }
+    var webDavUrl by remember {
+        mutableStateOf(savedWebDav?.account?.baseUrl?.toString().orEmpty())
+    }
+    var webDavUser by remember {
+        mutableStateOf(savedWebDav?.account?.username.orEmpty())
+    }
+    var webDavPassword by remember { mutableStateOf(savedWebDav?.password.orEmpty()) }
+    var webDavAuth by remember { mutableStateOf(savedWebDav?.authType ?: WebDavAuthType.AUTO) }
+    var showWebDavPassword by remember { mutableStateOf(false) }
+    var webDavError by remember { mutableStateOf<String?>(null) }
+
+    fun save() {
+        webDavError = null
+        val hasWebDav = webDavUrl.isNotBlank() ||
+            webDavUser.isNotBlank() ||
+            webDavPassword.isNotEmpty()
+        if (hasWebDav) {
+            if (webDavUser.isBlank() || webDavPassword.isEmpty()) {
+                webDavError = "填写 WebDAV 需同时填写地址、用户名和密码"
+                return
+            }
+            val base = try {
+                WebDavUrl.parseBase(webDavUrl)
+            } catch (e: Exception) {
+                webDavError = e.message ?: "WebDAV 地址格式不正确"
+                return
+            }
+            try {
+                WebDavCredentialStore(context).save(
+                    WebDavAccount(base, webDavUser.trim()),
+                    webDavPassword,
+                    webDavAuth,
+                )
+            } catch (e: Exception) {
+                webDavError = e.message ?: "WebDAV 凭据保存失败"
+                return
+            }
+        }
+        onSave(url, password)
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 640.dp),
             color = AppSurface,
             shape = RoundedCornerShape(18.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder),
         ) {
-            Column(Modifier.padding(18.dp)) {
+            Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState())) {
                 Text("NAS / SQL 曲库", color = AppText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
                     "填写 SQL API 地址与密码；留空密码则保留原值。",
@@ -1045,9 +1093,81 @@ private fun CatalogSettingsDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "WebDAV（NAS 音频拉流）",
+                    color = AppText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    "本地播放与投送 NAS 曲目需要 WebDAV；只改 SQL Token 时可留空。",
+                    color = AppMuted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                )
+                OutlinedTextField(
+                    value = webDavUrl,
+                    onValueChange = { webDavUrl = it },
+                    label = { Text("WebDAV 地址（http://NAS-IP:9005/）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = webDavUser,
+                    onValueChange = { webDavUser = it },
+                    label = { Text("WebDAV 用户名") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = webDavPassword,
+                    onValueChange = { webDavPassword = it },
+                    label = { Text("WebDAV 密码") },
+                    singleLine = true,
+                    visualTransformation = if (showWebDavPassword) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        TextButton(onClick = { showWebDavPassword = !showWebDavPassword }) {
+                            Text(if (showWebDavPassword) "隐藏" else "显示", fontSize = 11.sp)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    Modifier.padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    WebDavAuthType.values().forEach { type ->
+                        FilterChip(
+                            selected = webDavAuth == type,
+                            onClick = { webDavAuth = type },
+                            label = { Text(type.label, fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppSurface2,
+                                selectedLabelColor = AppText,
+                                labelColor = AppMuted,
+                                containerColor = AppSurface,
+                            ),
+                        )
+                    }
+                }
+                webDavError?.let { message ->
+                    Text(
+                        message,
+                        color = Color(0xFFEF5350),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
                 Row(Modifier.padding(top = 12.dp)) {
                     Button(
-                        onClick = { onSave(url, password) },
+                        onClick = { save() },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AppGold,
                             contentColor = Color(0xFF1A1408),

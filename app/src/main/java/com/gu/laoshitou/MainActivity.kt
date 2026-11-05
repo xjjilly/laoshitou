@@ -935,7 +935,7 @@ private fun AppRoot() {
     ): String? {
         val saved = WebDavCredentialStore(context).load()
         if (saved == null) {
-            state.status = "请先在 NAS 曲库连接并保存 WebDAV 凭据"
+            state.status = "请先配置 NAS 密码（曲库 → NAS → 配置 → WebDAV）"
             return state.status
         }
         if (track.fileSize <= 0L) {
@@ -1001,12 +1001,16 @@ private fun AppRoot() {
         PlayedTrackStore(context).markPlayed(track.id)
         state.status = "正在播放（SQL 曲库）：${track.title}"
         refreshMetrics(state)
+        // Keep the CPU awake during screen-off: the catalog path uses
+        // NativeBridge directly, so it must join the same foreground service
+        // (and PARTIAL_WAKE_LOCK) as local file playback.
+        runCatching { PlaybackService.start(context, track.title) }
         return null
     }
 
     suspend fun castCatalogTrack(track: CatalogTrack): String? {
         val saved = WebDavCredentialStore(context).load()
-            ?: return "请先在 NAS 曲库连接并保存 WebDAV 凭据"
+            ?: return "请先配置 NAS 密码（曲库 → NAS → 配置 → WebDAV）"
         val url = catalogTrackUrl(track) ?: return "曲目路径无效"
         if (track.fileSize <= 0L) {
             return "曲库未提供文件大小，无法投送"
