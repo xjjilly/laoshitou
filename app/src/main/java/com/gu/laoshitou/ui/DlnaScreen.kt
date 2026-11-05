@@ -291,7 +291,7 @@ private fun SenderPanel(
                 color = HifiMuted,
             )
             Text(
-                "同一局域网内的设备都可以浏览并播放你的曲库。URL 带随机 token 与正确文件后缀。",
+                "同一局域网内的设备都可以浏览并播放你的曲库。URL 带随机令牌与正确文件后缀。",
                 style = MaterialTheme.typography.bodySmall,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -385,7 +385,7 @@ private fun DmcPanel(
         }
         Text(
             "发现局域网 MediaRenderer，并把本地曲目投送过去。投送会停止本地播放；" +
-                "媒体文件由 DMS 的 token 端点提供，因此需要先启动曲库共享。",
+                "媒体文件由 DMS 的令牌端点提供，因此需要先启动曲库共享。",
             style = MaterialTheme.typography.bodySmall,
             color = HifiMuted,
         )

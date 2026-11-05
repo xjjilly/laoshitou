@@ -885,7 +885,7 @@ private fun LibraryScreen(
                 when {
                     catalogClient == null -> {
                         Text(
-                            "请先在旧版 SQL 曲库连接并保存地址与 Token；之后这里会自动加载真实专辑与封面。",
+                            "请先在旧版 SQL 曲库连接并保存地址与密码；之后这里会自动加载真实专辑与封面。",
                             color = AppMuted,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),

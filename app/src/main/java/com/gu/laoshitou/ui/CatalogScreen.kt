@@ -453,7 +453,7 @@ private fun CatalogConnectionCard(
             OutlinedTextField(
                 value = token,
                 onValueChange = onTokenChange,
-                label = { Text("API Token") },
+                label = { Text("API 密码") },
                 singleLine = true,
                 visualTransformation = if (showToken) {
                     VisualTransformation.None
