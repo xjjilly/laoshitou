@@ -16,6 +16,7 @@ out/
 local.properties
 *.iml
 .idea/
+.vscode/
 captures/
 .externalNativeBuild/
 .cxx/
