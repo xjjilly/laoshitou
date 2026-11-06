@@ -22,8 +22,8 @@ android {
         applicationId = "com.gu.laoshitou"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.3.1"
+        versionCode = 7
+        versionName = "1.5"
 
         ndk {
             // FFmpeg is currently built for arm64-v8a. Add x86_64 here after

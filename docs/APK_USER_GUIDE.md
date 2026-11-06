@@ -1,10 +1,13 @@
 # 老石头 APK 使用说明书（小白版）
 
-适用版本：**1.3.1**（versionCode 6）
+适用版本：**1.5**（versionCode 7）
 
 老石头是一个“把音乐放在手机里、安安静静播放”的本地音乐播放器：
 无广告、无在线曲库、无账号、无遥测。默认不联网；DLNA 局域网播放是可选功能，
 只有你主动开启后才会在同一个 Wi-Fi/局域网内工作。
+
+1.5 版新增：NAS / SQL 曲库与真实封面、WebDAV 凭据配置、作为发送者投送 PC、
+作为接收者当 DLNA 音箱、锁屏播放保活；本地播放与 DSP 部分继续适用。
 
 > 本软件开源免费。如果你是花钱买的，你被骗了，请立刻退款并举报。
 
@@ -24,6 +27,7 @@
 8. [常见问题](#8-常见问题)
 9. [隐私与网络说明](#9-隐私与网络说明)
 10. [版本、校验与反馈](#10-版本校验与反馈)
+11. [使用场景与玩法推荐](#11-使用场景与玩法推荐)
 
 ---
 
@@ -33,13 +37,13 @@
 - 处理器：arm64-v8a（近几年的主流安卓手机基本都满足）。
 - 需要允许“安装未知来源应用”（不同品牌位置不同，通常在
   “设置 → 应用 → 特殊权限 → 安装未知应用”里）。
-- 本说明书对应版本：**1.3.1**。
+- 本说明书对应版本：**1.5**。
 
 ## 2. 安装 APK
 
 ### 方法一：手机上直接安装（推荐小白）
 
-1. 把 `LaoShiTou-Android-v1.3.1-signed.apk` 传到手机（微信文件传输、数据线、
+1. 把 `LaoShiTou-Android-v1.5-signed.apk` 传到手机（微信文件传输、数据线、
    网盘均可）。
 2. 用手机的文件管理器找到这个 APK，点一下。
 3. 如果系统提示“禁止安装未知应用”，点“设置”，允许当前文件管理器安装应用。
@@ -48,7 +52,7 @@
 ### 方法二：用电脑 adb 安装（进阶）
 
 ```sh
-adb install -r LaoShiTou-Android-v1.3.1-signed.apk
+adb install -r LaoShiTou-Android-v1.5-signed.apk
 ```
 
 ### 安装失败怎么办？
@@ -56,7 +60,7 @@ adb install -r LaoShiTou-Android-v1.3.1-signed.apk
 - 提示“应用未安装 / 签名不一致”：手机里可能装过**别的签名**的旧版本。
   先卸载旧版再安装。卸载不会删除 `/sdcard/laoshitou/` 里的音乐文件。
 - 提示“解析软件包出错”：APK 没传完整，重新传一次。
-- 提示“版本降级”：新 APK 的版本号比已安装的低，请确认使用的是 1.3.1 版。
+- 提示“版本降级”：新 APK 的版本号比已安装的低，请确认使用的是 1.5 版。
 
 ## 3. 第一次打开：权限与音乐目录
 
@@ -300,17 +304,37 @@ adb uninstall com.gu.laoshitou
 
 ## 10. 版本、校验与反馈
 
-- 版本：**1.3.1**（versionCode 6）
+- 版本：**1.5**（versionCode 7）
 - 包名：`com.gu.laoshitou`
 - 签名证书 SHA-256：
   `eb14ff089e17f6790bbe01cf67669152d86a5921e94d1a108dcb8d51945c7fe8`
 - APK SHA-256：
-  `403e38d401740af4afcab9a3fe0fc79958b1550387256a4dabf8e79d9018bce3`
+  `b99d780de6ce4980972d7b0a5bff8d8f112ebbc3c99af1d9100f051a7627664f`
 - 校验 APK（可选，进阶）：
-  - Windows：`certutil -hashfile LaoShiTou-Android-v1.3.1-signed.apk SHA256`
-  - macOS/Linux：`sha256sum LaoShiTou-Android-v1.3.1-signed.apk`
-  - 官方校验和文件：`artifacts/SHA256SUMS-v1.3.1.txt`
+  - Windows：`certutil -hashfile LaoShiTou-Android-v1.5-signed.apk SHA256`
+  - macOS/Linux：`sha256sum LaoShiTou-Android-v1.5-signed.apk`
+  - 官方校验和文件：`artifacts/SHA256SUMS-v1.5.txt`
 - 项目主页与问题反馈：<https://github.com/xjjilly/laoshitou>
 - 软件许可证：GNU GPLv3（见 `LICENSE`）
 
-祝你听歌愉快。
+---
+
+## 11. 使用场景与玩法推荐
+
+- **手机本地听歌**：把音乐放进 `/sdcard/laoshitou/`，扫描后按专辑播放；
+  锁屏后由前台服务与唤醒锁保持播放。
+- **NAS / SQL 曲库**：在「曲库 → NAS → 配置」填写 SQL API 地址与 Token；
+  封面、专辑、曲目直接从 NAS 索引加载。
+- **手机选歌、PC 出声**：选择「发送者」，开启 DMC、启动曲库共享（DMS），
+  发现并选择「老石头 PC」，在 NAS 曲库里点「投送」。
+- **手机当第二只音箱**：切「接收者」，启动 DMR；PC 或其他设备投送手机，
+  手机用原生 FFmpeg + 老石头 DSP 播放。
+- **锁屏 / 口袋模式**：投送后锁屏，PC 继续播放；本地播放锁屏也不断。
+- **NAS + 手机 + PC 三端**：NAS 存、PC 听、手机控/听；同一连接只启用一个
+  DLNA 角色，避免 DMC/DMR 冲突。
+- **弱网/缓存**：PC 端对 NAS 的 WAV/FLAC 会边下边播；手机端 NAS 曲目投送
+  同样走局域网，网络抖动时以 PC 端缓存为准。
+
+**更多玩法，等待用户发掘**：不同角色组合、投送目标切换、锁屏/通知控制、
+NAS 封面墙、DSP 预设与本地/远程曲库混用……都值得慢慢试。
+欢迎反馈你的玩法与问题，下一版说明会继续补充。
