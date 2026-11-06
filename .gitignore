@@ -27,6 +27,11 @@ captures/
 *.dll
 *.dylib
 *.exe
+*.pdb
+*.ilk
+*.exp
+*.obj
+*.lib
 
 # Release signing (never commit)
 keystore.properties
