@@ -187,6 +187,14 @@ fun AboutScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = HifiMuted.copy(alpha = 0.55f),
                 )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "联系作者：gsl_snake",
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HifiMuted,
+                )
                 Spacer(Modifier.height(24.dp))
             }
         }
