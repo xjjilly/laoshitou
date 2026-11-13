@@ -24,11 +24,17 @@ data class CatalogSettings(
  * is encrypted by a dedicated Android Keystore key; it never lands in
  * plaintext and is never compiled into the APK.
  */
-class CatalogSettingsStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+class CatalogSettingsStore(
+    context: Context,
+    private val prefsName: String = PREFS,
+    private val keyAlias: String = KEY_ALIAS,
+    private val defaultBase: String = DEFAULT_BASE,
+) {
+    private val prefs =
+        context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     fun load(): CatalogSettings {
-        val base = prefs.getString(KEY_BASE, null) ?: DEFAULT_BASE
+        val base = prefs.getString(KEY_BASE, null) ?: defaultBase
         val token = prefs.getString(KEY_TOKEN, null)
             ?.takeIf { it.isNotEmpty() }
             ?.let { runCatching { decrypt(it) }.getOrNull() }
@@ -45,7 +51,7 @@ class CatalogSettingsStore(context: Context) {
 
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let {
+        (keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let {
             return it
         }
         val generator = KeyGenerator.getInstance(
@@ -54,7 +60,7 @@ class CatalogSettingsStore(context: Context) {
         )
         generator.init(
             KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
+                keyAlias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
             )
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)

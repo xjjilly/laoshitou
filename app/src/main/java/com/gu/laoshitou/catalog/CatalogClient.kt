@@ -79,6 +79,10 @@ class CatalogClient(baseUrl: String, private val token: String) {
         }
     }
 
+    /** Absolute audio stream URL for the PC SQL library API. */
+    fun trackStreamUrl(trackId: String): String =
+        "$base/api/v1/tracks/${urlSegment(trackId)}/stream"
+
     fun close() {
         client.dispatcher.cancelAll()
         client.dispatcher.executorService.shutdown()
