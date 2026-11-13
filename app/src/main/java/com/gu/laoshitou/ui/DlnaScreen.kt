@@ -213,6 +213,7 @@ private fun SenderPanel(
             Switch(
                 checked = controller.dmsEnabled,
                 onCheckedChange = { scope.launch { controller.setDmsEnabled(it) } },
+                enabled = !controller.dmsBusy,
             )
         }
         Row(
@@ -392,7 +393,7 @@ private fun DmcPanel(
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = { scope.launch { controller.discoverRenderers() } },
-                enabled = !controller.dmcDiscovering,
+                enabled = !controller.dmcDiscovering && controller.networkAddress != null,
             ) {
                 Text(if (controller.dmcDiscovering) "发现中…" else "发现投送设备")
             }
@@ -477,7 +478,8 @@ private fun DmcPanel(
                         scope.launch { controller.castTrack(File(track.path), track.name) }
                     }
                 },
-                enabled = track != null && controller.dmsRunning && !controller.casting,
+                enabled = track != null && controller.dmsRunning &&
+                    controller.dmcEnabled && !controller.casting,
             ) {
                 Text(
                     if (controller.casting) "投送中…" else

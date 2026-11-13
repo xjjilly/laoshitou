@@ -6,7 +6,6 @@ package com.gu.laoshitou.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
-import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,20 +34,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -97,6 +91,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -108,6 +103,7 @@ import com.gu.laoshitou.catalog.CatalogClient
 import com.gu.laoshitou.catalog.CatalogSettingsStore
 import com.gu.laoshitou.catalog.CatalogTrack
 import com.gu.laoshitou.catalog.PlayedTrackStore
+import com.gu.laoshitou.nas.NasCredentialExporter
 import com.gu.laoshitou.nas.WebDavAccount
 import com.gu.laoshitou.nas.WebDavAuthType
 import com.gu.laoshitou.nas.WebDavCredentialStore
@@ -187,11 +183,28 @@ fun AppShell(
     onCastCatalogTrack: (CatalogTrack) -> Unit,
 ) {
     var page by remember { mutableStateOf(0) }
+    var showAdvancedAudio by remember { mutableStateOf(false) }
+    // Debug-only: jump to a page directly so UI can be captured without adb
+    // input injection (MIUI blocks it on the test device).
+    val debugContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        val debuggable =
+            (debugContext.applicationInfo.flags and
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val activity = debugContext as? android.app.Activity
+        if (debuggable) {
+            if (activity?.intent?.getBooleanExtra("open_nas_settings", false) == true) {
+                page = 1
+            }
+            if (activity?.intent?.getBooleanExtra("open_advanced_audio", false) == true) {
+                showAdvancedAudio = true
+            }
+        }
+    }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var positionMs by remember { mutableStateOf(0L) }
     var durationMs by remember { mutableStateOf(0L) }
-    var showAdvancedAudio by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -241,6 +254,7 @@ fun AppShell(
                             )
                             1 -> LibraryScreen(
                                 state = state,
+                                dlna = dlna,
                                 onMenu = { scope.launch { drawerState.open() } },
                                 onPlayTrack = { album, index ->
                                     actions.openAlbum(album.relativePath)
@@ -266,13 +280,6 @@ fun AppShell(
                                 onClick = { page = 0 },
                             )
                         }
-                        if (page == 0 && dlna.casting) {
-                            CastRemoteCard(
-                                dlna = dlna,
-                                modifier = Modifier.align(Alignment.BottomCenter)
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                            )
-                        }
                     }
                 }
             }
@@ -286,17 +293,17 @@ private fun AdvancedAudioPage(
     actions: PlayerActions,
     onBack: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().background(AppBg)) {
-        HifiDashboardScreen(state, actions)
-        Surface(
-            modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
-            color = AppSurface,
-            shape = RoundedCornerShape(10.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder),
+    Column(Modifier.fillMaxSize().background(HifiColors.background)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onBack) {
-                Text("← 返回新界面", color = AppGold, fontSize = 12.sp)
+                Text("← 返回主界面", color = HifiAmber, fontSize = 13.sp)
             }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            HifiDashboardScreen(state, actions)
         }
     }
 }
@@ -411,7 +418,6 @@ private fun HomeScreen(
     durationMs: Long,
     onMenu: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     var dragPositionMs by remember { mutableStateOf<Long?>(null) }
     val castActive = dlna.casting
     val shownPositionMs = if (castActive) dlna.castPositionMs else (dragPositionMs ?: positionMs)
@@ -432,6 +438,33 @@ private fun HomeScreen(
     } else {
         0f
     }
+    // A queue only exists for album playback or a NAS catalog queue. A single
+    // picked file has no previous/next target, so those controls are disabled.
+    val catalogQueueActive = state.catalogQueueIndex in state.catalogQueue.indices
+    val queueSize = if (catalogQueueActive) state.catalogQueue.size else state.tracks.size
+    val canSkip = !castActive && queueSize > 0
+    val canShuffle = !castActive && queueSize > 1
+    val canRepeat = !castActive && (state.playing || state.paused)
+    val shuffleActive = state.playMode == PlayMode.Shuffle
+    val repeatActive = state.playMode == PlayMode.Loop
+    // The play button must reflect every source that can actually be resumed:
+    // NAS catalog queue, the current local file, or the manual path field.
+    // Checking only filePath previously made NAS/test/polarity sources look
+    // unloaded and turned the button grey after returning from the advanced
+    // page even though a track was still loaded.
+    val canResumeCatalog = state.catalogQueueIndex in state.catalogQueue.indices
+    val canResumeCurrent = remember(state.currentPath, state.playing, state.paused) {
+        state.currentPath.isNotBlank() &&
+            !state.currentPath.startsWith("http") &&
+            runCatching { File(state.currentPath).isFile }.getOrDefault(false)
+    }
+    val canStartPath = remember(state.filePath, state.playing, state.paused) {
+        state.filePath.isNotBlank() &&
+            runCatching { File(state.filePath).isFile }.getOrDefault(false)
+    }
+    val playEnabled = !castActive && (
+        state.playing || state.paused || canResumeCatalog || canResumeCurrent || canStartPath
+    )
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -591,47 +624,97 @@ private fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = {}) {
-                Icon(Icons.Rounded.Shuffle, contentDescription = "随机", tint = AppDim)
+            IconButton(
+                onClick = {
+                    actions.setPlayMode(
+                        if (shuffleActive) PlayMode.Sequential else PlayMode.Shuffle,
+                    )
+                },
+                enabled = canShuffle,
+            ) {
+                Icon(
+                    Icons.Rounded.Shuffle,
+                    contentDescription = if (shuffleActive) "关闭随机" else "随机",
+                    tint = when {
+                        !canShuffle -> AppDim.copy(alpha = 0.35f)
+                        shuffleActive -> AppGold
+                        else -> AppMuted
+                    },
+                )
             }
-            IconButton(onClick = {}) {
-                Icon(Icons.Rounded.SkipPrevious, contentDescription = "上一首", tint = AppDim)
+            IconButton(onClick = actions.playPrevious, enabled = canSkip) {
+                Icon(
+                    Icons.Rounded.SkipPrevious,
+                    contentDescription = "上一首",
+                    tint = if (canSkip) AppMuted else AppDim.copy(alpha = 0.35f),
+                )
             }
             Surface(
-                modifier = Modifier.size(64.dp).clickable {
-                    if (castActive) {
-                        scope.launch { dlna.pauseOrResumeCast() }
-                    } else if (state.playing || state.paused) {
+                onClick = {
+                    if (state.playing || state.paused) {
                         actions.togglePause()
                     } else {
-                        actions.startPath()
+                        actions.resumePlayback()
                     }
                 },
+                modifier = Modifier.size(64.dp),
+                enabled = playEnabled,
                 shape = CircleShape,
-                color = if (castActive) AppBlue else AppGold,
+                color = if (playEnabled) AppGold else AppSurface2,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         when {
-                            castActive && dlna.castPaused -> Icons.Rounded.PlayArrow
-                            castActive -> Icons.Rounded.Pause
+                            castActive -> Icons.Rounded.Cast
                             state.playing && !state.paused -> Icons.Rounded.Pause
                             else -> Icons.Rounded.PlayArrow
                         },
-                        contentDescription = "播放/暂停",
-                        tint = if (castActive) Color(0xFF06131A) else Color(0xFF1A1408),
-                        modifier = Modifier.size(30.dp),
+                        contentDescription = if (castActive) {
+                            "投送中，请在投送页控制"
+                        } else {
+                            "播放/暂停"
+                        },
+                        tint = if (playEnabled) Color(0xFF1A1408) else AppDim,
+                        modifier = Modifier.size(if (castActive) 26.dp else 30.dp),
                     )
                 }
             }
-            IconButton(onClick = {}) {
-                Icon(Icons.Rounded.SkipNext, contentDescription = "下一首", tint = AppDim)
+            IconButton(onClick = actions.playNext, enabled = canSkip) {
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = "下一首",
+                    tint = if (canSkip) AppMuted else AppDim.copy(alpha = 0.35f),
+                )
             }
-            IconButton(onClick = {}) {
-                Icon(Icons.Rounded.Repeat, contentDescription = "循环", tint = AppDim)
+            IconButton(
+                onClick = {
+                    actions.setPlayMode(
+                        if (repeatActive) PlayMode.Sequential else PlayMode.Loop,
+                    )
+                },
+                enabled = canRepeat,
+            ) {
+                Icon(
+                    Icons.Rounded.Repeat,
+                    contentDescription = if (repeatActive) "关闭循环" else "循环",
+                    tint = when {
+                        !canRepeat -> AppDim.copy(alpha = 0.35f)
+                        repeatActive -> AppGold
+                        else -> AppMuted
+                    },
+                )
             }
         }
-        Spacer(Modifier.height(if (castActive) 200.dp else 24.dp))
+        if (castActive) {
+            Text(
+                "投送控制请到“投送”页或 DLNA 设置页操作",
+                color = AppMuted,
+                fontSize = 10.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -650,113 +733,6 @@ private fun CastChip(dlna: DlnaController) {
     Chip(text, color)
 }
 
-@Composable
-private fun CastRemoteCard(dlna: DlnaController, modifier: Modifier = Modifier) {
-    val scope = rememberCoroutineScope()
-    var dragPositionMs by remember { mutableStateOf<Long?>(null) }
-    var dragVolume by remember { mutableStateOf<Int?>(null) }
-    val shownPositionMs = dragPositionMs ?: dlna.castPositionMs
-    val shownVolume = dragVolume ?: dlna.castVolume
-    val durationMs = dlna.castDurationMs.coerceAtLeast(1L)
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF10202A)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppBlue.copy(alpha = 0.45f)),
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Cast, contentDescription = null, tint = AppBlue)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        dlna.castTitle.ifBlank { "正在投送" },
-                        color = AppBlue,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        "${dlna.selectedRenderer?.friendlyName ?: "PC"} · " +
-                            when (dlna.castState) {
-                                "PLAYING" -> "播放中"
-                                "PAUSED_PLAYBACK" -> "已暂停"
-                                "TRANSITIONING" -> "缓冲中"
-                                else -> dlna.castState.ifBlank { "已连接" }
-                            },
-                        color = AppMuted,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TextButton(onClick = { scope.launch { dlna.pauseOrResumeCast() } }) {
-                    Text(if (dlna.castPaused) "继续" else "暂停", color = AppBlue, fontSize = 11.sp)
-                }
-                TextButton(onClick = { scope.launch { dlna.stopCast() } }) {
-                    Text("停止", color = AppMuted, fontSize = 11.sp)
-                }
-            }
-
-            Slider(
-                value = shownPositionMs.toFloat().coerceIn(0f, durationMs.toFloat()),
-                onValueChange = { dragPositionMs = it.toLong() },
-                onValueChangeFinished = {
-                    dragPositionMs?.let { target ->
-                        scope.launch { dlna.seekCast(target) }
-                    }
-                    dragPositionMs = null
-                },
-                valueRange = 0f..durationMs.toFloat(),
-                colors = SliderDefaults.colors(
-                    thumbColor = AppBlue,
-                    activeTrackColor = AppBlue,
-                    inactiveTrackColor = AppSurface2,
-                ),
-                modifier = Modifier.fillMaxWidth().height(26.dp),
-            )
-            Row(
-                Modifier.fillMaxWidth().padding(top = 0.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(formatMs(shownPositionMs), color = AppDim, fontSize = 10.sp)
-                Text(formatMs(dlna.castDurationMs), color = AppDim, fontSize = 10.sp)
-            }
-
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.VolumeUp,
-                    contentDescription = "音量",
-                    tint = AppMuted,
-                    modifier = Modifier.size(18.dp),
-                )
-                Slider(
-                    value = shownVolume.toFloat().coerceIn(0f, 100f),
-                    onValueChange = { dragVolume = it.toInt().coerceIn(0, 100) },
-                    onValueChangeFinished = {
-                        dragVolume?.let { volume ->
-                            scope.launch { dlna.setCastVolume(volume) }
-                        }
-                        dragVolume = null
-                    },
-                    valueRange = 0f..100f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = AppBlue,
-                        activeTrackColor = AppBlue.copy(alpha = 0.7f),
-                        inactiveTrackColor = AppSurface2,
-                    ),
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).height(24.dp),
-                )
-                Text("$shownVolume", color = AppMuted, fontSize = 10.sp, modifier = Modifier.width(26.dp))
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 曲库
 // ---------------------------------------------------------------------------
@@ -764,6 +740,7 @@ private fun CastRemoteCard(dlna: DlnaController, modifier: Modifier = Modifier) 
 @Composable
 private fun LibraryScreen(
     state: PlayerState,
+    dlna: DlnaController,
     onMenu: () -> Unit,
     onPlayTrack: (AlbumItem, Int) -> Unit,
     onPlayCatalogTrack: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
@@ -780,6 +757,31 @@ private fun LibraryScreen(
     val catalogStore = remember { CatalogSettingsStore(context) }
     var catalogSettings by remember { mutableStateOf(catalogStore.load()) }
     var showCatalogSettings by remember { mutableStateOf(false) }
+    // NAS playback/casting needs both the SQL catalog and WebDAV credentials;
+    // without WebDAV the play and cast buttons must stay disabled.
+    var nasStreamReady by remember {
+        mutableStateOf(
+            runCatching { WebDavCredentialStore(context).load() != null }
+                .getOrDefault(false),
+        )
+    }
+    val castReady = nasStreamReady &&
+        dlna.dmcEnabled &&
+        dlna.selectedRenderer != null &&
+        dlna.dmsRunning
+    // Debug-only UI verification hook: open the NAS/SQL dialog from an intent
+    // extra, because MIUI blocks adb input injection on the test device.
+    val activityForDebug = context as? android.app.Activity
+    LaunchedEffect(Unit) {
+        val debuggable =
+            (context.applicationInfo.flags and
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debuggable &&
+            activityForDebug?.intent?.getBooleanExtra("open_nas_settings", false) == true
+        ) {
+            showCatalogSettings = true
+        }
+    }
     val catalogClient = remember(catalogSettings) {
         if (catalogSettings.baseUrl.isNotBlank() && catalogSettings.token.isNotBlank()) {
             CatalogClient(catalogSettings.baseUrl, catalogSettings.token)
@@ -795,15 +797,22 @@ private fun LibraryScreen(
     var catalogError by remember { mutableStateOf<String?>(null) }
     var catalogLoading by remember { mutableStateOf(false) }
     var catalogReload by remember { mutableStateOf(0) }
+    // Tracks which reload counter produced the current list, so "刷新" really
+    // refetches instead of being ignored once albums are non-empty.
+    var loadedReload by remember { mutableStateOf(-1) }
 
     LaunchedEffect(source, catalogClient, catalogReload) {
-        if (source == 1 && catalogClient != null && catalogAlbums.isEmpty()) {
+        if (source == 1 && catalogClient != null && loadedReload != catalogReload) {
+            loadedReload = catalogReload
             catalogLoading = true
             catalogError = null
-            runCatching { catalogClient.listAlbums() }
-                .onSuccess { catalogAlbums = it }
-                .onFailure { catalogError = it.message ?: "曲库连接失败" }
-            catalogLoading = false
+            try {
+                runCatching { catalogClient.listAlbums() }
+                    .onSuccess { catalogAlbums = it }
+                    .onFailure { catalogError = it.message ?: "曲库连接失败" }
+            } finally {
+                catalogLoading = false
+            }
         }
     }
 
@@ -813,8 +822,14 @@ private fun LibraryScreen(
             subtitle = "本地与 NAS 统一浏览",
             onMenu = onMenu,
             trailing = {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Rounded.Search, contentDescription = "搜索", tint = AppMuted)
+                // Search is not implemented yet: keep it visibly disabled so it
+                // no longer looks like a clickable no-op.
+                IconButton(onClick = {}, enabled = false) {
+                    Icon(
+                        Icons.Rounded.Search,
+                        contentDescription = "搜索（暂未开放）",
+                        tint = AppDim.copy(alpha = 0.35f),
+                    )
                 }
             },
         )
@@ -882,8 +897,19 @@ private fun LibraryScreen(
                     TextButton(onClick = { showCatalogSettings = true }) {
                         Text("配置", color = AppGold, fontSize = 11.sp)
                     }
-                    TextButton(onClick = { catalogReload++ }) {
-                        Text("刷新", color = AppMuted, fontSize = 11.sp)
+                    TextButton(
+                        onClick = { catalogReload++ },
+                        enabled = catalogClient != null && !catalogLoading,
+                    ) {
+                        Text(
+                            if (catalogError != null) "重试" else "刷新",
+                            color = if (catalogClient != null && !catalogLoading) {
+                                AppMuted
+                            } else {
+                                AppDim.copy(alpha = 0.35f)
+                            },
+                            fontSize = 11.sp,
+                        )
                     }
                 }
 
@@ -910,12 +936,6 @@ private fun LibraryScreen(
                             fontSize = 11.sp,
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                         )
-                        TextButton(
-                            onClick = { catalogReload++ },
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                        ) {
-                            Text("重试", color = AppGold, fontSize = 11.sp)
-                        }
                     }
                     else -> LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
@@ -972,6 +992,8 @@ private fun LibraryScreen(
         CatalogAlbumDialog(
             album = album,
             client = catalogClient,
+            nasStreamReady = nasStreamReady,
+            castReady = castReady,
             onDismiss = { openCatalogAlbum = null },
             onPlay = { track, queue, index ->
                 openCatalogAlbum = null
@@ -989,6 +1011,9 @@ private fun LibraryScreen(
             onSave = { url, password ->
                 catalogStore.save(url, password)
                 catalogSettings = catalogStore.load()
+                nasStreamReady = runCatching {
+                    WebDavCredentialStore(context).load() != null
+                }.getOrDefault(false)
                 catalogAlbums = emptyList()
                 catalogCovers.clear()
                 catalogError = null
@@ -1022,6 +1047,21 @@ private fun CatalogSettingsDialog(
     var webDavAuth by remember { mutableStateOf(savedWebDav?.authType ?: WebDavAuthType.AUTO) }
     var showWebDavPassword by remember { mutableStateOf(false) }
     var webDavError by remember { mutableStateOf<String?>(null) }
+    val exportScope = rememberCoroutineScope()
+    var exportMessage by remember { mutableStateOf<String?>(null) }
+
+    fun exportCredentials() {
+        exportScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                NasCredentialExporter.export(context)
+            }
+            exportMessage = if (result.ok) {
+                "已导出到：${result.path}\n文件为明文，请勿分享。"
+            } else {
+                "导出失败：${result.error}"
+            }
+        }
+    }
 
     fun save() {
         webDavError = null
@@ -1061,13 +1101,38 @@ private fun CatalogSettingsDialog(
             border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder),
         ) {
             Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState())) {
-                Text("NAS / SQL 曲库", color = AppText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "NAS / SQL 曲库",
+                        color = AppText,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { exportCredentials() }) {
+                        Text("导出凭据", color = AppGold, fontSize = 11.sp)
+                    }
+                }
                 Text(
                     "填写 SQL API 地址与密码；留空密码则保留原值。",
                     color = AppMuted,
                     fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
+                Text(
+                    "导出的是已保存的凭据；修改后请先保存。",
+                    color = AppMuted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+                )
+                exportMessage?.let { message ->
+                    Text(
+                        message,
+                        color = AppMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
@@ -1205,6 +1270,7 @@ private fun AlbumTracksDialog(
                 Row(Modifier.padding(vertical = 12.dp)) {
                     Button(
                         onClick = { onPlay(0) },
+                        enabled = album.tracks.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AppGold,
                             contentColor = Color(0xFF1A1408),
@@ -1252,6 +1318,8 @@ private fun AlbumTracksDialog(
 private fun CatalogAlbumDialog(
     album: CatalogAlbum,
     client: CatalogClient?,
+    nasStreamReady: Boolean,
+    castReady: Boolean,
     onDismiss: () -> Unit,
     onPlay: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
     onCast: (CatalogTrack) -> Unit,
@@ -1312,7 +1380,7 @@ private fun CatalogAlbumDialog(
                         Row(Modifier.padding(vertical = 12.dp)) {
                             Button(
                                 onClick = { tracks.firstOrNull()?.let { onPlay(it, tracks, 0) } },
-                                enabled = tracks.isNotEmpty(),
+                                enabled = tracks.isNotEmpty() && nasStreamReady,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = AppGold,
                                     contentColor = Color(0xFF1A1408),
@@ -1323,12 +1391,31 @@ private fun CatalogAlbumDialog(
                             Spacer(Modifier.width(10.dp))
                             OutlinedButton(onClick = onDismiss) { Text("关闭", fontSize = 12.sp) }
                         }
+                        if (!nasStreamReady) {
+                            Text(
+                                "未配置 NAS WebDAV：请先在“配置”中填写 WebDAV 地址、用户名和密码，播放才可用。",
+                                color = AppMuted,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                        }
+                        if (!castReady) {
+                            Text(
+                                "投送需先在“投送”页选择设备并启动曲库共享。",
+                                color = AppMuted,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                        }
                         Column(
                             Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                         ) {
                             tracks.forEachIndexed { index, track ->
                                 Row(
-                                    Modifier.fillMaxWidth().clickable { onPlay(track, tracks, index) }
+                                    Modifier.fillMaxWidth()
+                                        .clickable(enabled = nasStreamReady) {
+                                            onPlay(track, tracks, index)
+                                        }
                                         .padding(vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -1354,8 +1441,19 @@ private fun CatalogAlbumDialog(
                                             fontSize = 10.sp,
                                         )
                                     }
-                                    TextButton(onClick = { onCast(track) }) {
-                                        Text("投送", color = AppBlue, fontSize = 11.sp)
+                                    TextButton(
+                                        onClick = { onCast(track) },
+                                        enabled = castReady,
+                                    ) {
+                                        Text(
+                                            "投送",
+                                            color = if (castReady) {
+                                                AppBlue
+                                            } else {
+                                                AppDim.copy(alpha = 0.35f)
+                                            },
+                                            fontSize = 11.sp,
+                                        )
                                     }
                                 }
                                 HorizontalDivider(color = AppBorder.copy(alpha = 0.5f))
@@ -1511,6 +1609,16 @@ private fun loadEmbeddedCover(path: String): Bitmap? {
 private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
     val scope = rememberCoroutineScope()
     val roles = listOf(DlnaRole.SENDER, DlnaRole.RECEIVER, DlnaRole.OFFLINE)
+    LaunchedEffect(Unit) { dlna.refreshNetwork() }
+    val hasNetwork = dlna.networkAddress != null
+    val isSender = dlna.role == DlnaRole.SENDER
+    val isReceiver = dlna.role == DlnaRole.RECEIVER
+    val canDiscover = isSender && dlna.dmcEnabled &&
+        !dlna.dmcDiscovering && hasNetwork
+    val canToggleDms = isSender && dlna.dmsEnabled && !dlna.dmsBusy &&
+        (dlna.dmsRunning || hasNetwork)
+    val canToggleDmr = isReceiver && !dlna.dmrBusy &&
+        (dlna.dmrRunning || hasNetwork)
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -1620,9 +1728,31 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("发现设备", color = AppDim, fontSize = 10.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { scope.launch { dlna.discoverRenderers() } }) {
-                        Text(if (dlna.dmcDiscovering) "发现中…" else "重新发现", fontSize = 11.sp)
+                    TextButton(
+                        onClick = { scope.launch { dlna.discoverRenderers() } },
+                        enabled = canDiscover,
+                    ) {
+                        Text(
+                            if (dlna.dmcDiscovering) "发现中…" else "重新发现",
+                            color = if (canDiscover) {
+                                AppBlue
+                            } else {
+                                AppDim.copy(alpha = 0.35f)
+                            },
+                            fontSize = 11.sp,
+                        )
                     }
+                }
+                if (!isSender || !dlna.dmcEnabled || !hasNetwork) {
+                    Text(
+                        when {
+                            !isSender -> "切换到“发送者”角色后可用"
+                            !dlna.dmcEnabled -> "投送端已关闭，请到 DLNA 设置中开启"
+                            else -> "未连接局域网，无法发现设备"
+                        },
+                        color = AppMuted,
+                        fontSize = 10.sp,
+                    )
                 }
                 if (dlna.renderers.isEmpty()) {
                     Text(
@@ -1636,7 +1766,7 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                         if (index > 0) HorizontalDivider(color = AppBorder)
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                dlna.selectedRenderer = renderer
+                                dlna.selectRenderer(renderer)
                             }.padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -1652,6 +1782,14 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                         }
                     }
                 }
+                dlna.dmcError?.let { message ->
+                    Text(
+                        message,
+                        color = Color(0xFFEF5350),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
 
@@ -1666,7 +1804,9 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("曲库共享（DMS）", color = AppDim, fontSize = 10.sp)
                         Text(
-                            dlna.dmsStatus.ifBlank { "未启动" },
+                            dlna.dmsStatus.ifBlank {
+                                if (dlna.dmsRunning) "共享中" else "未启动"
+                            },
                             color = AppMuted,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(top = 4.dp),
@@ -1675,16 +1815,38 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                     Button(
                         onClick = {
                             scope.launch {
-                                if (dlna.dmsStatus.isBlank()) dlna.startDms() else dlna.stopDms()
+                                if (dlna.dmsRunning) dlna.stopDms() else dlna.startDms()
                             }
                         },
+                        enabled = canToggleDms,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AppGold,
                             contentColor = Color(0xFF1A1408),
                         ),
                     ) {
-                        Text(if (dlna.dmsStatus.isBlank()) "启动" else "停止", fontSize = 11.sp)
+                        Text(if (dlna.dmsRunning) "停止" else "启动", fontSize = 11.sp)
                     }
+                }
+                if (!canToggleDms) {
+                    Text(
+                        when {
+                            !isSender -> "切换到“发送者”角色后可用"
+                            !dlna.dmsEnabled -> "曲库共享已关闭，请到 DLNA 设置中开启"
+                            !hasNetwork -> "未连接局域网，无法启动曲库共享"
+                            else -> "处理中…"
+                        },
+                        color = AppMuted,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                dlna.dmsError?.let { message ->
+                    Text(
+                        message,
+                        color = Color(0xFFEF5350),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }
@@ -1712,6 +1874,7 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                                 if (dlna.dmrRunning) dlna.stopDmr() else dlna.startDmr()
                             }
                         },
+                        enabled = canToggleDmr,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AppGold,
                             contentColor = Color(0xFF1A1408),
@@ -1719,6 +1882,22 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                     ) {
                         Text(if (dlna.dmrRunning) "停止接收" else "启动接收", fontSize = 11.sp)
                     }
+                }
+                if (!canToggleDmr) {
+                    Text(
+                        if (!hasNetwork) "未连接局域网，无法启动接收" else "处理中…",
+                        color = AppMuted,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                dlna.dmrError?.let { message ->
+                    Text(
+                        message,
+                        color = Color(0xFFEF5350),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }
@@ -1753,25 +1932,24 @@ private fun AppDrawer(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         Spacer(Modifier.height(18.dp))
-        DrawerSection("界面风格")
-        UiVersion.entries.forEach { version ->
-            DrawerItem(
-                label = version.label,
-                selected = state.uiVersion == version,
-                onClick = {
-                    actions.setUiVersion(version)
-                    onClose()
-                },
-            )
-        }
         DrawerSection("音频")
-        DrawerItem(label = "输出设备", trailing = "${state.outputRate} Hz", onClick = onClose)
-        DrawerItem(label = "EQ / DSP", onClick = onClose)
+        DrawerItem(
+            label = "输出设备",
+            trailing = "${state.outputRate} Hz",
+            enabled = false,
+            onClick = onClose,
+        )
+        DrawerItem(label = "EQ / DSP", enabled = false, onClick = onClose)
         DrawerItem(label = "高级音频设置") {
             onClose()
             onOpenAdvancedAudio()
         }
-        DrawerItem(label = "专注播放", onClick = onClose)
+        DrawerItem(
+            label = "专注播放",
+            trailing = "未开放",
+            enabled = false,
+            onClick = onClose,
+        )
         DrawerSection("服务")
         DrawerItem(label = "DLNA 设置") {
             onClose()
@@ -1782,7 +1960,12 @@ private fun AppDrawer(
             onClose()
             actions.setAboutOpen(true)
         }
-        DrawerItem(label = "帮助", onClick = onClose)
+        DrawerItem(
+            label = "帮助",
+            trailing = "未开放",
+            enabled = false,
+            onClick = onClose,
+        )
         Spacer(Modifier.weight(1f))
         Text(
             "UI 壳子预览 · 播放逻辑未改动",
@@ -1808,22 +1991,27 @@ private fun DrawerSection(title: String) {
 private fun DrawerItem(
     label: String,
     trailing: String? = null,
-    selected: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick)
+        Modifier.fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
-            color = if (selected) AppGold else AppMuted,
+            color = if (enabled) AppMuted else AppDim.copy(alpha = 0.35f),
             fontSize = 13.sp,
             modifier = Modifier.weight(1f),
         )
         if (trailing != null) {
-            Text(trailing, color = AppDim, fontSize = 10.sp)
+            Text(
+                trailing,
+                color = if (enabled) AppDim else AppDim.copy(alpha = 0.35f),
+                fontSize = 10.sp,
+            )
         }
     }
 }

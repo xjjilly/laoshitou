@@ -1,6 +1,6 @@
 # 老石头 APK 使用说明书（小白版）
 
-适用版本：**1.5**（versionCode 7）
+适用版本：**1.5.1**（versionCode 8）
 
 老石头是一个“把音乐放在手机里、安安静静播放”的本地音乐播放器：
 无广告、无在线曲库、无账号、无遥测。默认不联网；DLNA 局域网播放是可选功能，
@@ -8,6 +8,8 @@
 
 1.5 版新增：NAS / SQL 曲库与真实封面、WebDAV 凭据配置、作为发送者投送 PC、
 作为接收者当 DLNA 音箱、锁屏播放保活；本地播放与 DSP 部分继续适用。
+1.5.1 版新增：关于页「老石头 PC 端」生态卡片，以及 PC 安装版/便携版下载入口
+（蓝奏云，提取码可一键复制）；播放功能与 1.5 相同。
 
 > 本软件开源免费。如果你是花钱买的，你被骗了，请立刻退款并举报。
 
@@ -37,13 +39,13 @@
 - 处理器：arm64-v8a（近几年的主流安卓手机基本都满足）。
 - 需要允许“安装未知来源应用”（不同品牌位置不同，通常在
   “设置 → 应用 → 特殊权限 → 安装未知应用”里）。
-- 本说明书对应版本：**1.5**。
+- 本说明书对应版本：**1.5.1**。
 
 ## 2. 安装 APK
 
 ### 方法一：手机上直接安装（推荐小白）
 
-1. 把 `LaoShiTou-Android-v1.5-signed.apk` 传到手机（微信文件传输、数据线、
+1. 把 `LaoShiTou-Android-v1.5.1-signed.apk` 传到手机（微信文件传输、数据线、
    网盘均可）。
 2. 用手机的文件管理器找到这个 APK，点一下。
 3. 如果系统提示“禁止安装未知应用”，点“设置”，允许当前文件管理器安装应用。
@@ -52,7 +54,7 @@
 ### 方法二：用电脑 adb 安装（进阶）
 
 ```sh
-adb install -r LaoShiTou-Android-v1.5-signed.apk
+adb install -r LaoShiTou-Android-v1.5.1-signed.apk
 ```
 
 ### 安装失败怎么办？
@@ -60,7 +62,7 @@ adb install -r LaoShiTou-Android-v1.5-signed.apk
 - 提示“应用未安装 / 签名不一致”：手机里可能装过**别的签名**的旧版本。
   先卸载旧版再安装。卸载不会删除 `/sdcard/laoshitou/` 里的音乐文件。
 - 提示“解析软件包出错”：APK 没传完整，重新传一次。
-- 提示“版本降级”：新 APK 的版本号比已安装的低，请确认使用的是 1.5 版。
+- 提示“版本降级”：新 APK 的版本号比已安装的低，请确认使用的是 1.5.1 版。
 
 ## 3. 第一次打开：权限与音乐目录
 
@@ -154,7 +156,7 @@ DLNA 可以让你把手机里的音乐**共享到同一个 Wi-Fi 里的电视/�
 
 - 必须：两台设备连接**同一个 Wi-Fi / 局域网**。
 - 不需要：互联网、账号、云端。
-- 每次接入新的局域网，应用都会让你重新选角色：
+- 在「投送」页的「本机角色」里选择（默认保持离线，不会自动弹窗）：
   - **发送者**：共享曲库（DMS）+ 投送（DMC）。
   - **接收者**：手机作为 DLNA 音箱（DMR）。
   - **保持离线**：本次不使用 DLNA。
@@ -304,16 +306,16 @@ adb uninstall com.gu.laoshitou
 
 ## 10. 版本、校验与反馈
 
-- 版本：**1.5**（versionCode 7）
+- 版本：**1.5.1**（versionCode 8）
 - 包名：`com.gu.laoshitou`
 - 签名证书 SHA-256：
   `eb14ff089e17f6790bbe01cf67669152d86a5921e94d1a108dcb8d51945c7fe8`
 - APK SHA-256：
-  `b99d780de6ce4980972d7b0a5bff8d8f112ebbc3c99af1d9100f051a7627664f`
+  `0378f2249debc4ed0283a9e15760d9af26ab2e3b68d69c31b0c1464647e8136f`
 - 校验 APK（可选，进阶）：
-  - Windows：`certutil -hashfile LaoShiTou-Android-v1.5-signed.apk SHA256`
-  - macOS/Linux：`sha256sum LaoShiTou-Android-v1.5-signed.apk`
-  - 官方校验和文件：`artifacts/SHA256SUMS-v1.5.txt`
+  - Windows：`certutil -hashfile LaoShiTou-Android-v1.5.1-signed.apk SHA256`
+  - macOS/Linux：`sha256sum LaoShiTou-Android-v1.5.1-signed.apk`
+  - 官方校验和文件：`artifacts/SHA256SUMS-v1.5.1.txt`
 - 项目主页与问题反馈：<https://github.com/xjjilly/laoshitou>
 - 软件许可证：GNU GPLv3（见 `LICENSE`）
 

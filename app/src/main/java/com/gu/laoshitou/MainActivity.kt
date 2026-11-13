@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gu.laoshitou.catalog.CatalogMediaDataSource
 import com.gu.laoshitou.catalog.CatalogTrack
 import com.gu.laoshitou.catalog.PlayedTrackStore
+import com.gu.laoshitou.nas.NasCredentialExporter
 import com.gu.laoshitou.nas.WebDavClient
 import com.gu.laoshitou.nas.WebDavCredentialStore
 import com.gu.laoshitou.ui.AppShell
@@ -45,7 +46,6 @@ import com.gu.laoshitou.ui.DlnaController
 import com.gu.laoshitou.ui.DlnaRole
 import com.gu.laoshitou.ui.DlnaScreen
 import com.gu.laoshitou.ui.LanSessionController
-import com.gu.laoshitou.ui.RolePromptDialog
 import com.gu.laoshitou.ui.AboutScreen
 import com.gu.laoshitou.ui.AlbumItem
 import com.gu.laoshitou.ui.EqEditorFrequencies
@@ -57,7 +57,6 @@ import com.gu.laoshitou.ui.PlayerState
 import com.gu.laoshitou.ui.SoundPreset
 import com.gu.laoshitou.ui.SoundPresetCatalog
 import com.gu.laoshitou.ui.TrackItem
-import com.gu.laoshitou.ui.UiVersion
 import com.gu.laoshitou.ui.UserPreset
 import com.gu.laoshitou.ui.eqEditorMaxDb
 import java.io.File
@@ -83,6 +82,18 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+        }
+        // Debug-only verification hook: adb cannot inject taps on MIUI, so a
+        // launch extra can exercise the credential export directly.
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+            intent?.getBooleanExtra("export_nas_credentials", false) == true
+        ) {
+            val result = NasCredentialExporter.export(this)
+            Toast.makeText(
+                this,
+                if (result.ok) "已导出：${result.path}" else "导出失败：${result.error}",
+                Toast.LENGTH_LONG,
+            ).show()
         }
         setContent {
             AppRoot()
@@ -562,6 +573,7 @@ private fun AppRoot() {
                     state.tracks = emptyList()
                     state.currentTrackIndex = -1
                     state.currentPath = cacheFile.absolutePath
+                    state.filePath = cacheFile.absolutePath
                 }
                 refreshMetrics(state)
             }
@@ -1145,26 +1157,131 @@ private fun AppRoot() {
         return state.playing
     }
 
+    /**
+     * Manual previous/next. Works for both the NAS catalog queue and the
+     * scanned local album queue, honouring the current play mode.
+     */
+    suspend fun playAdjacent(step: Int) {
+        if (state.catalogQueueIndex >= 0 && state.catalogQueue.isNotEmpty()) {
+            val count = state.catalogQueue.size
+            val current = state.catalogQueueIndex
+            val target = when (state.playMode) {
+                PlayMode.Sequential -> current + step
+                PlayMode.Loop -> ((current + step) % count + count) % count
+                PlayMode.Shuffle -> {
+                    if (count <= 1) {
+                        current
+                    } else {
+                        var candidate = Random.nextInt(count - 1)
+                        if (candidate >= current) {
+                            candidate += 1
+                        }
+                        candidate
+                    }
+                }
+            }
+            if (target !in state.catalogQueue.indices) {
+                state.status = if (step > 0) "已经是最后一首" else "已经是第一首"
+                return
+            }
+            beginCatalogPlayback(state.catalogQueue[target], state.catalogQueue, target)
+            return
+        }
+
+        val count = state.tracks.size
+        if (count == 0) {
+            state.status = "当前没有可切换的曲目"
+            return
+        }
+        val current = state.currentTrackIndex
+        val target = when {
+            current !in state.tracks.indices -> if (step > 0) 0 else count - 1
+            state.playMode == PlayMode.Loop -> ((current + step) % count + count) % count
+            state.playMode == PlayMode.Shuffle -> {
+                if (count <= 1) {
+                    current
+                } else {
+                    var candidate = Random.nextInt(count - 1)
+                    if (candidate >= current) {
+                        candidate += 1
+                    }
+                    candidate
+                }
+            }
+            else -> current + step
+        }
+        if (target !in state.tracks.indices) {
+            state.status = if (step > 0) "已经是最后一首" else "已经是第一首"
+            return
+        }
+        val track = state.tracks[target]
+        state.filePath = track.path
+        beginPlayback(track.path, track.name, target)
+    }
+
+    fun playManualPath() {
+        val displayName = state.filePath.substringAfterLast('/').ifBlank {
+            state.filePath
+        }
+        val album = state.albums.firstOrNull { candidate ->
+            candidate.tracks.any { it.path == state.filePath }
+        }
+        if (album == null) {
+            state.tracks = emptyList()
+            beginPlayback(state.filePath, displayName, -1)
+        } else {
+            state.tracks = album.tracks
+            val index = album.tracks.indexOfFirst { it.path == state.filePath }
+            beginPlayback(state.filePath, displayName, index)
+        }
+    }
+
+    /**
+     * Resumes the source that is actually loaded: the NAS catalog queue first,
+     * then the current local file, then the manual path field. This keeps the
+     * home play button working for NAS/test/polarity sources, which do not
+     * update [PlayerState.filePath].
+     */
+    fun resumePlayback() {
+        val catalogIndex = state.catalogQueueIndex
+        if (catalogIndex in state.catalogQueue.indices) {
+            scope.launch {
+                beginCatalogPlayback(
+                    state.catalogQueue[catalogIndex],
+                    state.catalogQueue,
+                    catalogIndex,
+                )
+            }
+            return
+        }
+        val current = state.currentPath
+        if (current.isNotBlank() &&
+            !current.startsWith("http") &&
+            runCatching { File(current).isFile }.getOrDefault(false)
+        ) {
+            val index = state.tracks.indexOfFirst { it.path == current }
+            if (index < 0) {
+                state.tracks = emptyList()
+            }
+            state.filePath = current
+            beginPlayback(current, state.trackName, index)
+            return
+        }
+        if (state.filePath.isNotBlank() &&
+            runCatching { File(state.filePath).isFile }.getOrDefault(false)
+        ) {
+            playManualPath()
+            return
+        }
+        state.status = "请先选择音频文件"
+    }
+
     val actions = PlayerActions(
         pickAudio = { audioPicker.launch(arrayOf("audio/*")) },
         pickAudioFolder = { folderPicker.launch(null) },
         pickEq = { eqPicker.launch(arrayOf("*/*")) },
-        startPath = {
-            val displayName = state.filePath.substringAfterLast('/').ifBlank {
-                state.filePath
-            }
-            val album = state.albums.firstOrNull { candidate ->
-                candidate.tracks.any { it.path == state.filePath }
-            }
-            if (album == null) {
-                state.tracks = emptyList()
-                beginPlayback(state.filePath, displayName, -1)
-            } else {
-                state.tracks = album.tracks
-                val index = album.tracks.indexOfFirst { it.path == state.filePath }
-                beginPlayback(state.filePath, displayName, index)
-            }
-        },
+        startPath = ::playManualPath,
+        resumePlayback = ::resumePlayback,
         startTestTone = {
             val started = NativeBridge.startTestTone(48000)
             state.playing = started
@@ -1264,12 +1381,6 @@ private fun AppRoot() {
         deleteUserPreset = ::deleteUserPreset,
         applyUserPreset = ::applyUserPreset,
         applyPreset = ::applyPreset,
-        clearEq = {
-            state.eqPath = ""
-            state.eqName = ""
-            state.status = "已清除 EQ 配置（下次播放生效）"
-            settings.edit().putBoolean("use_visual_eq", false).apply()
-        },
         setEqCascade = { state.eqCascade = it },
         setEqSlopeEnabled = { state.eqSlopeEnabled = it },
         setEqSlope = { state.eqSlope = it },
@@ -1351,7 +1462,6 @@ private fun AppRoot() {
         },
         startPolarityTest = ::startPolarityTest,
         setPlayMode = { state.playMode = it },
-        setUiVersion = { state.uiVersion = it },
         setAboutOpen = { state.aboutOpen = it },
         setDlnaOpen = { state.dlnaOpen = it },
         setFilePath = { state.filePath = it },
@@ -1362,6 +1472,8 @@ private fun AppRoot() {
         openAlbum = { relativePath -> state.selectedAlbumPath = relativePath },
         closeAlbum = { state.selectedAlbumPath = null },
         playTrack = ::playTrack,
+        playPrevious = { scope.launch { playAdjacent(-1) } },
+        playNext = { scope.launch { playAdjacent(1) } },
     )
 
     // 回到前台自动重扫；首次 ON_RESUME 即覆盖启动扫描
@@ -1447,19 +1559,6 @@ private fun AppRoot() {
             }
             delay(500)
         }
-    }
-
-    if (lanSession.rolePromptOpen) {
-        RolePromptDialog(
-            address = lanSession.address,
-            onSelected = { role ->
-                lanSession.markRoleChosen()
-                scope.launch { dlnaController.selectRole(role) }
-                if (role != DlnaRole.OFFLINE) {
-                    state.dlnaOpen = true
-                }
-            },
-        )
     }
 
     if (state.dlnaOpen) {

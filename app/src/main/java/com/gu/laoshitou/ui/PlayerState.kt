@@ -8,12 +8,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.gu.laoshitou.catalog.CatalogTrack
 
-enum class UiVersion(val label: String) {
-    Minimal("极简"),
-    Immersive("沉浸"),
-    Hifi("高保真"),
-}
-
 enum class PlayMode(val label: String) {
     Sequential("顺序"),
     Loop("循环"),
@@ -71,7 +65,6 @@ class PlayerState(
     defaultFilePath: String,
     defaultEqPath: String,
 ) {
-    var uiVersion by mutableStateOf(UiVersion.Minimal)
     var aboutOpen by mutableStateOf(false)
     var dlnaOpen by mutableStateOf(false)
     var catalogQueue by mutableStateOf<List<CatalogTrack>>(emptyList())
@@ -149,6 +142,7 @@ data class PlayerActions(
     val pickAudioFolder: () -> Unit,
     val pickEq: () -> Unit,
     val startPath: () -> Unit,
+    val resumePlayback: () -> Unit,
     val startTestTone: () -> Unit,
     val stop: () -> Unit,
     val togglePause: () -> Unit,
@@ -158,6 +152,8 @@ data class PlayerActions(
     val openAlbum: (String) -> Unit,
     val closeAlbum: () -> Unit,
     val playTrack: (Int) -> Unit,
+    val playPrevious: () -> Unit,
+    val playNext: () -> Unit,
     val setProcessing: (Boolean) -> Unit,
     val setCrossfeed: (Boolean) -> Unit,
     val setCrossfeedWidth: (Double) -> Unit,
@@ -180,7 +176,6 @@ data class PlayerActions(
     val deleteUserPreset: (String) -> Unit,
     val applyUserPreset: (UserPreset) -> Unit,
     val applyPreset: (SoundPreset) -> Unit,
-    val clearEq: () -> Unit,
     val setEqCascade: (Boolean) -> Unit,
     val setEqSlopeEnabled: (Boolean) -> Unit,
     val setEqSlope: (Double) -> Unit,
@@ -196,7 +191,6 @@ data class PlayerActions(
     val loadCurrentEqIntoEditor: () -> Unit,
     val startPolarityTest: () -> Unit,
     val setPlayMode: (PlayMode) -> Unit,
-    val setUiVersion: (UiVersion) -> Unit,
     val setAboutOpen: (Boolean) -> Unit,
     val setDlnaOpen: (Boolean) -> Unit,
     val setFilePath: (String) -> Unit,

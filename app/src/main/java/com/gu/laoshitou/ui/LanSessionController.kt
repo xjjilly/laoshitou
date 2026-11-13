@@ -10,47 +10,25 @@ import androidx.compose.runtime.setValue
 import com.gu.laoshitou.dlna.NetworkGate
 
 /**
- * Tracks one LAN connection session. Every new session raises
- * [rolePromptOpen]; the user must choose a role (or offline) before DLNA can
- * start. Losing/changing the network closes the prompt and resets the choice.
+ * Tracks one LAN connection session. [sessionKey] changes when the phone joins
+ * a different Wi-Fi/Ethernet network, which lets the player reset DLNA state.
  */
 class LanSessionController(context: Context) {
 
-    var address by mutableStateOf<String?>(null)
-        private set
     var sessionKey by mutableStateOf<String?>(null)
         private set
-    var rolePromptOpen by mutableStateOf(false)
-        private set
-
-    private var roleChosenForSession = false
 
     private val gate = NetworkGate(
         context = context,
-        onLanSession = { key, host ->
+        onLanSession = { key, _ ->
             if (key != sessionKey) {
                 sessionKey = key
-                address = host
-                roleChosenForSession = false
-            }
-            if (!roleChosenForSession) {
-                rolePromptOpen = true
             }
         },
-        onLanLost = {
-            sessionKey = null
-            address = null
-            roleChosenForSession = false
-            rolePromptOpen = false
-        },
+        onLanLost = { sessionKey = null },
     )
 
     fun start() = gate.start()
 
     fun stop() = gate.stop()
-
-    fun markRoleChosen() {
-        roleChosenForSession = true
-        rolePromptOpen = false
-    }
 }
