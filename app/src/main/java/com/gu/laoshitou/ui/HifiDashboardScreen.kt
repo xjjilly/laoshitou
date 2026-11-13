@@ -66,23 +66,15 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                UiVersionSelector(
-                    selected = state.uiVersion,
-                    onSelect = actions.setUiVersion,
-                )
-
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = "高保真控制台",
+                        text = "高级音效设置",
                         style = MaterialTheme.typography.headlineLarge,
                         color = HifiAmber,
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = { actions.setDlnaOpen(true) }) {
                         Text("DLNA")
-                    }
-                    TextButton(onClick = { actions.setAboutOpen(true) }) {
-                        Text("关于")
                     }
                 }
                 Text(
@@ -164,20 +156,6 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = actions.pickAudio,
-                        enabled = !state.playing,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("选择音频")
-                    }
-                    OutlinedButton(
-                        onClick = actions.pickAudioFolder,
-                        enabled = !state.playing,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("选择文件夹")
-                    }
                     Button(
                         onClick = actions.togglePause,
                         enabled = state.playing,
@@ -347,7 +325,10 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
             color = HifiMuted,
         )
         Spacer(Modifier.height(4.dp))
-        OutlinedButton(onClick = actions.loadCurrentEqIntoEditor) {
+        OutlinedButton(
+            onClick = actions.loadCurrentEqIntoEditor,
+            enabled = state.eqPath.isNotEmpty(),
+        ) {
             Text("载入当前 EQ 文件")
         }
         Text(

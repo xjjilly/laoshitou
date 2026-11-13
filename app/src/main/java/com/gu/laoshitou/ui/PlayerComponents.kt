@@ -47,33 +47,6 @@ internal fun playbackStateText(state: PlayerState): String = when {
 }
 
 @Composable
-fun UiVersionSelector(
-    selected: UiVersion,
-    onSelect: (UiVersion) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        UiVersion.entries.forEach { version ->
-            FilterChip(
-                selected = selected == version,
-                onClick = { onSelect(version) },
-                label = {
-                    Text(
-                        text = version.label,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
 fun SettingsSwitch(
     label: String,
     checked: Boolean,
@@ -322,95 +295,9 @@ fun PerformanceWarning(state: PlayerState, modifier: Modifier = Modifier) {
     )
 }
 
-@Composable
-fun QuickSettingsContent(
-    state: PlayerState,
-    actions: PlayerActions,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text("音效与设置", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-
-        val eqLabel = state.eqName.ifEmpty {
-            state.eqPath.substringAfterLast('/').ifEmpty { "未加载" }
-        }
-        Text("耳机校准：$eqLabel", style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = actions.pickEq, enabled = !state.playing) {
-                Text("选择 AutoEQ 文件")
-            }
-            TextButton(onClick = actions.clearEq, enabled = !state.playing) {
-                Text("清除")
-            }
-        }
-        Text(
-            "支持 AutoEQ ParametricEQ.txt / CSV / GraphicEQ；选择后下次播放生效。",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        Spacer(Modifier.height(8.dp))
-        SettingsSwitch(
-            label = "响度补偿（随系统音量）",
-            checked = state.loudness,
-            onCheckedChange = actions.setLoudness,
-            enabled = true,
-        )
-        Text(
-            "音量越低，低频和高频补偿越多；播放中实时生效。",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        Spacer(Modifier.height(8.dp))
-        Text("Crossfeed 强度", style = MaterialTheme.typography.bodyLarge)
-        Slider(
-            value = state.crossfeedWidth.toFloat(),
-            onValueChange = { actions.setCrossfeedWidth(it.toDouble()) },
-            valueRange = 0f..1f,
-            enabled = !state.playing,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            "${(state.crossfeedWidth * 100).roundToInt()}%（0 = 关闭，下次播放生效）",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        Spacer(Modifier.height(8.dp))
-        Text("声场宽度（M/S）", style = MaterialTheme.typography.bodyLarge)
-        Slider(
-            value = state.stereoWidth.toFloat(),
-            onValueChange = { actions.setStereoWidth(it.toDouble()) },
-            valueRange = 0f..1.5f,
-            enabled = !state.playing,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            "${(state.stereoWidth * 100).roundToInt()}%（100% = 原始，0% = 单声道）",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        Spacer(Modifier.height(8.dp))
-        PresetSection(state, actions)
-
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = actions.startPolarityTest,
-            enabled = !state.playing,
-        ) {
-            Text("声道 / 极性测试")
-        }
-        Text(
-            "左 → 右 → 同相 → 反相；反相应居中且低频更少。",
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
-}
-
 /**
- * Built-in scenario presets plus the user's saved presets. Shared by the
- * quick-settings sheet (minimal/immersive UIs) and the HiFi advanced
- * settings, so presets are reachable from every UI version.
+ * Built-in scenario presets plus the user's saved presets, shared by the HiFi
+ * advanced settings.
  */
 @Composable
 fun PresetSection(state: PlayerState, actions: PlayerActions) {
@@ -502,6 +389,7 @@ fun PresetSection(state: PlayerState, actions: PlayerActions) {
                         actions.saveUserPreset(presetName)
                         presetDialogOpen = false
                     },
+                    enabled = presetName.isNotBlank(),
                 ) {
                     Text("保存")
                 }

@@ -178,14 +178,15 @@ AudioEngine: output reopened: requested=48000 actual=48000 (ring preserved)
 
 ## Download / install
 
-- Signed release APK: `artifacts/LaoShiTou-Android-v1.5-signed.apk`
+- Signed release APK: `artifacts/LaoShiTou-Android-v1.5.1-signed.apk`
 - Debug build: `app/build/outputs/apk/debug/app-debug.apk`
-- Checksums: `artifacts/SHA256SUMS-v1.5.txt`
-- Release notes: `RELEASE_NOTES_v1.5.md`
+- Checksums: `artifacts/SHA256SUMS-v1.5.1.txt`
+- Release notes: `RELEASE_NOTES_v1.5.1.md`
+- Changelog: `CHANGELOG.md`
 - 小白用户使用说明（中文）：`docs/APK_USER_GUIDE.md`
 
 ```sh
-adb install -r artifacts/LaoShiTou-Android-v1.5-signed.apk
+adb install -r artifacts/LaoShiTou-Android-v1.5.1-signed.apk
 ```
 
 The signed release uses a local PKCS12 keystore that is **not** committed.
@@ -210,10 +211,13 @@ To build it yourself:
    # app/build/outputs/apk/release/app-release.apk
    ```
 
-The GPLv3 corresponding source bundle is
-`artifacts/laoshitou-1.5-source.tar.gz`; it includes the app source,
-third-party sources, license texts and the exact FFmpeg 7.1 tarball. Publish
-it together with any binary release.
+For v1.5.1, the GPLv3 corresponding source is the `v1.5.1` tag:
+<https://github.com/xjjilly/laoshitou/archive/refs/tags/v1.5.1.tar.gz>. It
+includes the app source, third-party sources, license texts and the exact
+FFmpeg 7.1 tarball (`third_party/ffmpeg/ffmpeg-7.1.tar.xz`). A pre-built
+bundle, `laoshitou-1.5.1-source.tar.gz`, is attached to the v1.5.1 release.
+Publish the tag archive (or an equivalent source bundle) together with any
+binary release.
 
 On the phone, open **老石头**:
 
