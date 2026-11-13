@@ -65,10 +65,8 @@ import com.gu.laoshitou.R
 private const val PC_STORE_URL =
     "https://www.goofish.com/item?id=1100077192906"
 
-private const val PC_SETUP_URL = "https://wwbdj.lanzoul.com/it8004fburyh"
-private const val PC_SETUP_PASSWORD = "15u8"
-private const val PC_PORTABLE_URL = "https://wwbdj.lanzoul.com/iAMFE4fburtc"
-private const val PC_PORTABLE_PASSWORD = "gavy"
+private const val PC_PORTABLE_URL = "https://wwbdj.lanzoul.com/ijUib4furyxe"
+private const val PC_PORTABLE_PASSWORD = "bg0h"
 
 @Composable
 fun AboutScreen(
@@ -344,7 +342,7 @@ private fun PcEcosystemCard() {
 
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "老石头 PC 端 (v1.0.0) 现已发布",
+                text = "老石头 PC 端 (v1.0.1) 现已发布",
                 style = MaterialTheme.typography.titleMedium.copy(
                     brush = Brush.linearGradient(
                         listOf(
@@ -444,18 +442,7 @@ private fun PcDownloadDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PcDownloadEntry(
-                    name = "LaoShiTou-PC-v1.0-Setup.exe",
-                    description = "安装版 · 推荐",
-                    url = PC_SETUP_URL,
-                    password = PC_SETUP_PASSWORD,
-                    onOpen = { openUrl(context, PC_SETUP_URL) },
-                    onCopyPassword = {
-                        clipboard.setText(AnnotatedString(PC_SETUP_PASSWORD))
-                        Toast.makeText(context, "密码已复制", Toast.LENGTH_SHORT).show()
-                    },
-                )
-                PcDownloadEntry(
-                    name = "LaoShiTou-PC-v1.0-portable.zip",
+                    name = "LaoShiTou-PC-v1.0.1-portable.zip",
                     description = "便携版 · 解压即用",
                     url = PC_PORTABLE_URL,
                     password = PC_PORTABLE_PASSWORD,
