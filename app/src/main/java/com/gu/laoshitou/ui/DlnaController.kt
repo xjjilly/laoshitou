@@ -205,6 +205,11 @@ class DlnaController(private val context: Context) {
             stopDmr()
         }
         role = newRole
+        // Sender mode means "share this library". Start the DMS right away so
+        // the 曲库 is immediately usable for casting without a separate tap.
+        if (newRole == DlnaRole.SENDER && dmsEnabled && !dmsRunning && !dmsBusy) {
+            startDms()
+        }
     }
 
     suspend fun setDmsEnabled(enabled: Boolean) {

@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.MediaDataSource
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -36,7 +37,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gu.laoshitou.catalog.CatalogMediaDataSource
+import com.gu.laoshitou.catalog.CatalogSettingsStore
 import com.gu.laoshitou.catalog.CatalogTrack
+import com.gu.laoshitou.catalog.HttpCatalogMediaDataSource
+import com.gu.laoshitou.catalog.HttpMediaResource
 import com.gu.laoshitou.catalog.PlayedTrackStore
 import com.gu.laoshitou.nas.NasCredentialExporter
 import com.gu.laoshitou.nas.WebDavClient
@@ -940,27 +944,14 @@ private fun AppRoot() {
         }.getOrNull()
     }
 
-    suspend fun beginCatalogPlayback(
+    suspend fun startCatalogSource(
+        source: MediaDataSource,
+        sourceUrl: String,
+        label: String,
         track: CatalogTrack,
-        queue: List<CatalogTrack> = listOf(track),
-        index: Int = 0,
+        queue: List<CatalogTrack>,
+        index: Int,
     ): String? {
-        val saved = WebDavCredentialStore(context).load()
-        if (saved == null) {
-            state.status = "请先配置 NAS 密码（曲库 → NAS → 配置 → WebDAV）"
-            return state.status
-        }
-        if (track.fileSize <= 0L) {
-            state.status = "曲库未提供文件大小，无法流式播放"
-            return state.status
-        }
-        val url = catalogTrackUrl(track)
-        if (url == null) {
-            state.status = "曲目路径无效"
-            return state.status
-        }
-        val webdav = WebDavClient(saved.account, saved.password, saved.authType)
-        val source = CatalogMediaDataSource(webdav, url, track.fileSize)
         NativeBridge.stopPlayback()
         val plan = queryNativeOutputPlan(context)
         val started = withContext(Dispatchers.IO) {
@@ -998,7 +989,6 @@ private fun AppRoot() {
         }
         if (!started) {
             source.close()
-            webdav.close()
             state.status = NativeBridge.playbackLastError()
                 .ifBlank { "原生播放启动失败" }
             return state.status
@@ -1006,18 +996,162 @@ private fun AppRoot() {
         state.playing = true
         state.paused = false
         state.trackName = track.title
-        state.currentPath = url.toString()
+        state.currentPath = sourceUrl
         state.currentTrackIndex = -1
         state.catalogQueue = queue
         state.catalogQueueIndex = index
         PlayedTrackStore(context).markPlayed(track.id)
-        state.status = "正在播放（SQL 曲库）：${track.title}"
+        state.status = "正在播放（$label）：${track.title}"
         refreshMetrics(state)
         // Keep the CPU awake during screen-off: the catalog path uses
         // NativeBridge directly, so it must join the same foreground service
         // (and PARTIAL_WAKE_LOCK) as local file playback.
         runCatching { PlaybackService.start(context, track.title) }
         return null
+    }
+
+
+    fun pcMimeForFormat(format: String): String? = when (format.lowercase()) {
+        "flac" -> "audio/flac"
+        "wav", "w64" -> "audio/wav"
+        "mp3" -> "audio/mpeg"
+        "m4a", "mp4", "aac" -> "audio/mp4"
+        "ogg", "oga" -> "audio/ogg"
+        "opus" -> "audio/opus"
+        "dsf", "dff" -> "audio/x-dsd"
+        "ape" -> "audio/ape"
+        "wv" -> "audio/wavpack"
+        "aif", "aiff" -> "audio/aiff"
+        else -> null
+    }
+
+
+    suspend fun beginCatalogPlayback(
+        track: CatalogTrack,
+        queue: List<CatalogTrack> = listOf(track),
+        index: Int = 0,
+    ): String? {
+        val saved = WebDavCredentialStore(context).load()
+        if (saved == null) {
+            state.status = "请先配置 NAS 密码（曲库 → NAS → 配置 → WebDAV）"
+            return state.status
+        }
+        if (track.fileSize <= 0L) {
+            state.status = "曲库未提供文件大小，无法流式播放"
+            return state.status
+        }
+        val url = catalogTrackUrl(track)
+        if (url == null) {
+            state.status = "曲目路径无效"
+            return state.status
+        }
+        val webdav = WebDavClient(saved.account, saved.password, saved.authType)
+        val source = CatalogMediaDataSource(webdav, url, track.fileSize)
+        return startCatalogSource(source, url.toString(), "SQL 曲库", track, queue, index)
+    }
+
+    suspend fun beginPcCatalogPlayback(
+        track: CatalogTrack,
+        queue: List<CatalogTrack> = listOf(track),
+        index: Int = 0,
+    ): String? {
+        val settings = CatalogSettingsStore(
+            context,
+            prefsName = "pc_catalog_settings",
+            keyAlias = "laoshitou_pc_catalog_api",
+            defaultBase = "",
+        ).load()
+        if (settings.baseUrl.isBlank() || settings.token.isBlank()) {
+            state.status = "请先配置 PC-SQL 曲库（曲库 → PC-SQL 曲库 → 配置）"
+            return state.status
+        }
+        if (track.fileSize <= 0L) {
+            state.status = "曲库未提供文件大小，无法流式播放"
+            return state.status
+        }
+        val base = settings.baseUrl.trim().trimEnd('/')
+        val url = base + "/api/v1/tracks/" +
+            java.net.URLEncoder.encode(track.id, "UTF-8") + "/stream"
+        val source = HttpCatalogMediaDataSource(url, settings.token, track.fileSize)
+        return startCatalogSource(source, url, "PC-SQL 曲库", track, queue, index)
+    }
+
+    /** Shared native-engine startup for remote catalog sources. */
+    suspend fun castPcCatalogTrack(track: CatalogTrack): String? {
+        val settings = CatalogSettingsStore(
+            context,
+            prefsName = "pc_catalog_settings",
+            keyAlias = "laoshitou_pc_catalog_api",
+            defaultBase = "",
+        ).load()
+        if (settings.baseUrl.isBlank() || settings.token.isBlank()) {
+            return "请先配置 PC-SQL 曲库（曲库 → PC-SQL 曲库 → 配置）"
+        }
+        if (dlnaController.role != DlnaRole.SENDER) {
+            return "请先在“投送”页选择“发送者”"
+        }
+        if (!dlnaController.dmcEnabled) {
+            return "投送端已关闭，请到 DLNA 设置中开启"
+        }
+        if (dlnaController.selectedRenderer == null) {
+            return "请先在“投送”页选择投送设备"
+        }
+        if (track.fileSize <= 0L) {
+            return "曲库未提供文件大小，无法投送"
+        }
+        if (!dlnaController.dmsRunning) {
+            dlnaController.startDms()
+        }
+        if (!dlnaController.dmsRunning) {
+            return dlnaController.dmsError ?: "曲库共享启动失败"
+        }
+        val base = settings.baseUrl.trim().trimEnd('/')
+        val url = base + "/api/v1/tracks/" +
+            java.net.URLEncoder.encode(track.id, "UTF-8") + "/stream"
+        val resource = HttpMediaResource(
+            url = url,
+            token = settings.token,
+            name = track.title + "." + track.format,
+            length = track.fileSize,
+            mime = pcMimeForFormat(track.format),
+        )
+        dlnaController.castTrack(resource, track.title)
+        if (dlnaController.casting) {
+            return null
+        }
+        return dlnaController.dmcFormatWarning ?: dlnaController.dmcError ?: "投送失败"
+    }
+
+    /**
+     * Casts a track from the phone's local library. The DMS serves the file,
+     * so it is started on demand if it is not running yet (selecting the
+     * sender role normally starts it automatically).
+     */
+    suspend fun castLocalTrack(track: TrackItem): String? {
+        if (dlnaController.role != DlnaRole.SENDER) {
+            return "请先在“投送”页选择“发送者”"
+        }
+        if (!dlnaController.dmcEnabled) {
+            return "投送端已关闭，请到 DLNA 设置中开启"
+        }
+        if (dlnaController.selectedRenderer == null) {
+            return "请先在“投送”页选择投送设备"
+        }
+        if (!dlnaController.dmsRunning) {
+            dlnaController.startDms()
+        }
+        if (!dlnaController.dmsRunning) {
+            return dlnaController.dmsError ?: "曲库共享启动失败"
+        }
+        val file = File(track.path)
+        if (!file.isFile) {
+            return "文件不存在：${track.name}"
+        }
+        dlnaController.castTrack(file, track.name)
+        if (dlnaController.casting) {
+            return null
+        }
+        return dlnaController.dmcFormatWarning ?: dlnaController.dmcError ?: "投送失败"
     }
 
     suspend fun castCatalogTrack(track: CatalogTrack): String? {
@@ -1589,6 +1723,30 @@ private fun AppRoot() {
             onCastCatalogTrack = { track ->
                 scope.launch {
                     val error = castCatalogTrack(track)
+                    if (error != null) {
+                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onCastLocalTrack = { track ->
+                scope.launch {
+                    val error = castLocalTrack(track)
+                    if (error != null) {
+                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onPlayPcCatalogTrack = { track, queue, index ->
+                scope.launch {
+                    val error = beginPcCatalogPlayback(track, queue, index)
+                    if (error != null) {
+                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onCastPcCatalogTrack = { track ->
+                scope.launch {
+                    val error = castPcCatalogTrack(track)
                     if (error != null) {
                         Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
                     }

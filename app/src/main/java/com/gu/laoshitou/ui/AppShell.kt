@@ -181,6 +181,9 @@ fun AppShell(
     versionName: String,
     onPlayCatalogTrack: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
     onCastCatalogTrack: (CatalogTrack) -> Unit,
+    onCastLocalTrack: (TrackItem) -> Unit,
+    onPlayPcCatalogTrack: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
+    onCastPcCatalogTrack: (CatalogTrack) -> Unit,
 ) {
     var page by remember { mutableStateOf(0) }
     var showAdvancedAudio by remember { mutableStateOf(false) }
@@ -266,6 +269,9 @@ fun AppShell(
                                     page = 0
                                 },
                                 onCastCatalogTrack = onCastCatalogTrack,
+                                onCastLocalTrack = onCastLocalTrack,
+                                onPlayPcCatalogTrack = onPlayPcCatalogTrack,
+                                onCastPcCatalogTrack = onCastPcCatalogTrack,
                             )
                             else -> CastScreen(
                                 dlna = dlna,
@@ -745,12 +751,16 @@ private fun LibraryScreen(
     onPlayTrack: (AlbumItem, Int) -> Unit,
     onPlayCatalogTrack: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
     onCastCatalogTrack: (CatalogTrack) -> Unit,
+    onCastLocalTrack: (TrackItem) -> Unit,
+    onPlayPcCatalogTrack: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
+    onCastPcCatalogTrack: (CatalogTrack) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf(0) }
     var openAlbum by remember { mutableStateOf<AlbumItem?>(null) }
     var openCatalogAlbum by remember { mutableStateOf<CatalogAlbum?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val sources = listOf("本地", "NAS")
+    val sources = listOf("本地曲库", "NAS 曲库", "PC-SQL 曲库")
     val localAlbums = state.albums
     val localCovers = remember { mutableStateMapOf<String, ImageBitmap>() }
 
@@ -769,6 +779,11 @@ private fun LibraryScreen(
         dlna.dmcEnabled &&
         dlna.selectedRenderer != null &&
         dlna.dmsRunning
+    // Local tracks are served by the phone's own DMS; sender role plus a
+    // selected renderer is enough (DMS auto-starts when sender is chosen).
+    val localCastReady = dlna.role == DlnaRole.SENDER &&
+        dlna.dmcEnabled &&
+        dlna.selectedRenderer != null
     // Debug-only UI verification hook: open the NAS/SQL dialog from an intent
     // extra, because MIUI blocks adb input injection on the test device.
     val activityForDebug = context as? android.app.Activity
@@ -816,10 +831,58 @@ private fun LibraryScreen(
         }
     }
 
+    // ---- PC-SQL 曲库（PC App 内置 SQL API） -------------------------------
+    val pcStore = remember {
+        CatalogSettingsStore(
+            context,
+            prefsName = "pc_catalog_settings",
+            keyAlias = "laoshitou_pc_catalog_api",
+            defaultBase = "",
+        )
+    }
+    var pcSettings by remember { mutableStateOf(pcStore.load()) }
+    var showPcSettings by remember { mutableStateOf(false) }
+    val pcClient = remember(pcSettings) {
+        if (pcSettings.baseUrl.isNotBlank() && pcSettings.token.isNotBlank()) {
+            CatalogClient(pcSettings.baseUrl, pcSettings.token)
+        } else {
+            null
+        }
+    }
+    DisposableEffect(pcClient) {
+        onDispose { pcClient?.close() }
+    }
+    var pcAlbums by remember { mutableStateOf<List<CatalogAlbum>>(emptyList()) }
+    val pcCovers = remember { mutableStateMapOf<String, ImageBitmap>() }
+    var pcError by remember { mutableStateOf<String?>(null) }
+    var pcLoading by remember { mutableStateOf(false) }
+    var pcReload by remember { mutableStateOf(0) }
+    var pcLoadedReload by remember { mutableStateOf(-1) }
+    var openPcAlbum by remember { mutableStateOf<CatalogAlbum?>(null) }
+    val pcCastReady = pcClient != null &&
+        dlna.dmcEnabled &&
+        dlna.selectedRenderer != null &&
+        dlna.role == DlnaRole.SENDER
+
+    LaunchedEffect(source, pcClient, pcReload) {
+        if (source == 2 && pcClient != null && pcLoadedReload != pcReload) {
+            pcLoadedReload = pcReload
+            pcLoading = true
+            pcError = null
+            try {
+                runCatching { pcClient.listAlbums() }
+                    .onSuccess { pcAlbums = it }
+                    .onFailure { pcError = it.message ?: "PC 曲库连接失败" }
+            } finally {
+                pcLoading = false
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         AppTopBar(
             title = "曲库",
-            subtitle = "本地与 NAS 统一浏览",
+            subtitle = "本地 / NAS / PC 统一浏览",
             onMenu = onMenu,
             trailing = {
                 // Search is not implemented yet: keep it visibly disabled so it
@@ -851,16 +914,71 @@ private fun LibraryScreen(
                 )
             }
         }
+        val castStatusColor = when {
+            dlna.casting -> AppBlue
+            dlna.role == DlnaRole.SENDER && dlna.selectedRenderer != null -> AppGreen
+            dlna.role == DlnaRole.SENDER -> AppGold
+            else -> AppDim
+        }
+        val castStatusText = when {
+            dlna.casting ->
+                "正在投送：${dlna.castTitle.ifBlank { "曲目" }} → " +
+                    (dlna.selectedRenderer?.friendlyName ?: "设备")
+            dlna.role != DlnaRole.SENDER ->
+                "投送未开启：到“投送”页选择“发送者”后，本地 / NAS / PC 曲目都可投送"
+            dlna.selectedRenderer == null ->
+                "曲库已共享；到“投送”页选择设备后，点曲目右侧「投送」即可"
+            else ->
+                "投送就绪：点曲目右侧「投送」即可在 " +
+                    (dlna.selectedRenderer?.friendlyName ?: "设备") + " 播放"
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
+                .clip(RoundedCornerShape(12.dp)).background(AppSurface)
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(castStatusColor))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                castStatusText,
+                color = AppMuted,
+                fontSize = 10.sp,
+                modifier = Modifier.weight(1f),
+            )
+            if (dlna.casting) {
+                TextButton(onClick = { scope.launch { dlna.stopCast() } }) {
+                    Text("停止", color = AppBlue, fontSize = 10.sp)
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
 
         when (source) {
-            0 -> LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
-                contentPadding = PaddingValues(bottom = 96.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
+            0 -> Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "本地曲库 · ${localAlbums.size} 张",
+                        color = AppMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Chip(
+                        if (dlna.dmsRunning) "已共享" else "未共享",
+                        if (dlna.dmsRunning) AppGreen else AppDim,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 20.dp),
+                    contentPadding = PaddingValues(bottom = 96.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                 itemsIndexed(localAlbums) { index, album ->
                     LaunchedEffect(album.relativePath) {
                         if (localCovers[album.relativePath] == null) {
@@ -880,9 +998,10 @@ private fun LibraryScreen(
                         onClick = { openAlbum = album },
                     )
                 }
+                }
             }
 
-            else -> Column(Modifier.fillMaxSize()) {
+            1 -> Column(Modifier.fillMaxSize()) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -894,6 +1013,13 @@ private fun LibraryScreen(
                         fontSize = 11.sp,
                         modifier = Modifier.weight(1f),
                     )
+                    if (catalogClient != null) {
+                        Chip(
+                            if (dlna.selectedRenderer != null) "可投送" else "需选设备",
+                            if (dlna.selectedRenderer != null) AppBlue else AppDim,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     TextButton(onClick = { showCatalogSettings = true }) {
                         Text("配置", color = AppGold, fontSize = 11.sp)
                     }
@@ -974,17 +1100,121 @@ private fun LibraryScreen(
                     }
                 }
             }
+
+            2 -> Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (pcClient == null) "PC-SQL 曲库未配置"
+                        else "PC-SQL 曲库 · ${pcAlbums.size} 张",
+                        color = AppMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (pcClient != null) {
+                        Chip(
+                            if (dlna.selectedRenderer != null) "可投送" else "需选设备",
+                            if (dlna.selectedRenderer != null) AppBlue else AppDim,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    TextButton(onClick = { showPcSettings = true }) {
+                        Text("配置", color = AppGold, fontSize = 11.sp)
+                    }
+                    TextButton(
+                        onClick = { pcReload++ },
+                        enabled = pcClient != null && !pcLoading,
+                    ) {
+                        Text(
+                            if (pcError != null) "重试" else "刷新",
+                            color = if (pcClient != null && !pcLoading) {
+                                AppMuted
+                            } else {
+                                AppDim.copy(alpha = 0.35f)
+                            },
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+
+                when {
+                    pcClient == null -> {
+                        Text(
+                            "点击“配置”填写 PC App 的 SQL API 地址与 Token；" +
+                                "PC App 运行时会生成该凭据。",
+                            color = AppMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        )
+                    }
+                    pcLoading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(24.dp).size(28.dp),
+                            color = AppGold,
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                    pcError != null -> {
+                        Text(
+                            "加载失败：${pcError}",
+                            color = AppMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        )
+                    }
+                    else -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                            .padding(horizontal = 20.dp),
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        itemsIndexed(pcAlbums, key = { _, album -> album.id }) { index, album ->
+                            LaunchedEffect(album.id) {
+                                if (pcCovers[album.id] == null) {
+                                    val bitmap = withContext(Dispatchers.IO) {
+                                        val bytes = pcClient.loadCover(album)
+                                        if (bytes != null) {
+                                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        } else {
+                                            null
+                                        }
+                                    }
+                                    if (bitmap != null) {
+                                        pcCovers[album.id] = bitmap.asImageBitmap()
+                                    }
+                                }
+                            }
+                            AlbumTile(
+                                name = album.title,
+                                meta = listOfNotNull(
+                                    album.artist.takeIf { it.isNotBlank() },
+                                    "${album.trackCount} 首",
+                                ).joinToString(" · "),
+                                index = index,
+                                cover = pcCovers[album.id],
+                                onClick = { openPcAlbum = album },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
     openAlbum?.let { album ->
         AlbumTracksDialog(
             album = album,
+            castReady = localCastReady,
             onDismiss = { openAlbum = null },
             onPlay = { index ->
                 openAlbum = null
                 onPlayTrack(album, index)
             },
+            onCast = onCastLocalTrack,
         )
     }
 
@@ -1000,6 +1230,40 @@ private fun LibraryScreen(
                 onPlayCatalogTrack(track, queue, index)
             },
             onCast = onCastCatalogTrack,
+        )
+    }
+
+    openPcAlbum?.let { album ->
+        CatalogAlbumDialog(
+            album = album,
+            client = pcClient,
+            nasStreamReady = pcClient != null,
+            castReady = pcCastReady,
+            sourceLabel = "PC-SQL 曲库",
+            playbackHint = "PC-SQL 曲库未配置：请先在“配置”中填写 PC App 的 API 地址与 Token。",
+            onDismiss = { openPcAlbum = null },
+            onPlay = { track, queue, index ->
+                openPcAlbum = null
+                onPlayPcCatalogTrack(track, queue, index)
+            },
+            onCast = onCastPcCatalogTrack,
+        )
+    }
+
+    if (showPcSettings) {
+        PcCatalogSettingsDialog(
+            initialUrl = pcSettings.baseUrl,
+            initialToken = pcSettings.token,
+            onDismiss = { showPcSettings = false },
+            onSave = { url, token ->
+                pcStore.save(url, token)
+                pcSettings = pcStore.load()
+                pcAlbums = emptyList()
+                pcCovers.clear()
+                pcError = null
+                pcReload++
+                showPcSettings = false
+            },
         )
     }
 
@@ -1021,6 +1285,84 @@ private fun LibraryScreen(
                 showCatalogSettings = false
             },
         )
+    }
+}
+
+@Composable
+private fun PcCatalogSettingsDialog(
+    initialUrl: String,
+    initialToken: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var url by remember { mutableStateOf(initialUrl) }
+    var token by remember { mutableStateOf(initialToken) }
+    var showToken by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = AppSurface,
+            shape = RoundedCornerShape(18.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder),
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Text(
+                    "PC-SQL 曲库",
+                    color = AppText,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "填写 PC App 的 SQL API 地址与 Token；Token 在 PC 的 " +
+                        "library_api_token.txt 中。",
+                    color = AppMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("API 地址（http://PC-IP:39541）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("API Token") },
+                    singleLine = true,
+                    visualTransformation = if (showToken) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        TextButton(onClick = { showToken = !showToken }) {
+                            Text(if (showToken) "隐藏" else "显示", fontSize = 11.sp)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(onClick = onDismiss) {
+                        Text("取消", fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Button(
+                        onClick = { onSave(url.trim(), token.trim()) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppGold,
+                            contentColor = Color(0xFF1A1408),
+                        ),
+                    ) {
+                        Text("保存", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1249,8 +1591,10 @@ private fun CatalogSettingsDialog(
 @Composable
 private fun AlbumTracksDialog(
     album: AlbumItem,
+    castReady: Boolean,
     onDismiss: () -> Unit,
     onPlay: (Int) -> Unit,
+    onCast: (TrackItem) -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1262,7 +1606,7 @@ private fun AlbumTracksDialog(
             Column(Modifier.padding(18.dp)) {
                 Text(album.name, color = AppText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "${album.tracks.size} 首 · 本地文件",
+                    "${album.tracks.size} 首 · 本地曲库 · ${if (castReady) "可投送" else "投送未就绪"}",
                     color = AppMuted,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 4.dp),
@@ -1282,6 +1626,14 @@ private fun AlbumTracksDialog(
                     OutlinedButton(onClick = onDismiss) {
                         Text("关闭", fontSize = 12.sp)
                     }
+                }
+                if (!castReady) {
+                    Text(
+                        "投送需先在“投送”页选择“发送者”并选中设备。",
+                        color = AppMuted,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
                 }
                 Column(
                     Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
@@ -1304,7 +1656,22 @@ private fun AlbumTracksDialog(
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
                             )
+                            TextButton(
+                                onClick = { onCast(track) },
+                                enabled = castReady,
+                            ) {
+                                Text(
+                                    "投送",
+                                    color = if (castReady) {
+                                        AppBlue
+                                    } else {
+                                        AppDim.copy(alpha = 0.35f)
+                                    },
+                                    fontSize = 11.sp,
+                                )
+                            }
                         }
                         HorizontalDivider(color = AppBorder.copy(alpha = 0.5f))
                     }
@@ -1320,6 +1687,8 @@ private fun CatalogAlbumDialog(
     client: CatalogClient?,
     nasStreamReady: Boolean,
     castReady: Boolean,
+    sourceLabel: String = "NAS 曲库",
+    playbackHint: String? = null,
     onDismiss: () -> Unit,
     onPlay: (CatalogTrack, List<CatalogTrack>, Int) -> Unit,
     onCast: (CatalogTrack) -> Unit,
@@ -1355,6 +1724,7 @@ private fun CatalogAlbumDialog(
                     listOfNotNull(
                         album.artist.takeIf { it.isNotBlank() },
                         "${album.trackCount} 首",
+                        sourceLabel,
                     ).joinToString(" · "),
                     color = AppMuted,
                     fontSize = 11.sp,
@@ -1393,7 +1763,8 @@ private fun CatalogAlbumDialog(
                         }
                         if (!nasStreamReady) {
                             Text(
-                                "未配置 NAS WebDAV：请先在“配置”中填写 WebDAV 地址、用户名和密码，播放才可用。",
+                                playbackHint
+                                    ?: "未配置 NAS WebDAV：请先在“配置”中填写 WebDAV 地址、用户名和密码，播放才可用。",
                                 color = AppMuted,
                                 fontSize = 10.sp,
                                 modifier = Modifier.padding(bottom = 6.dp),
@@ -1663,8 +2034,16 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                         )
                     }
                     Chip(
-                        if (dlna.selectedRenderer != null) "已连接" else "未选择",
-                        if (dlna.selectedRenderer != null) AppGreen else AppDim,
+                        when {
+                            dlna.casting -> "投送中"
+                            dlna.selectedRenderer != null -> "已连接"
+                            else -> "未选择"
+                        },
+                        when {
+                            dlna.casting -> AppBlue
+                            dlna.selectedRenderer != null -> AppGreen
+                            else -> AppDim
+                        },
                     )
                 }
             }
@@ -1678,7 +2057,11 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                 border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder),
             ) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("正在投送", color = AppDim, fontSize = 10.sp)
+                    Text(
+                        "正在投送 → ${dlna.selectedRenderer?.friendlyName ?: "设备"}",
+                        color = AppDim,
+                        fontSize = 10.sp,
+                    )
                     Row(
                         Modifier.padding(top = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1802,12 +2185,22 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("曲库共享（DMS）", color = AppDim, fontSize = 10.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("曲库共享（DMS）", color = AppDim, fontSize = 10.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Chip(
+                                if (dlna.dmsRunning) "已共享" else "未启动",
+                                if (dlna.dmsRunning) AppGreen else AppDim,
+                            )
+                        }
                         Text(
-                            dlna.dmsStatus.ifBlank {
-                                if (dlna.dmsRunning) "共享中" else "未启动"
+                            when {
+                                dlna.dmsRunning && dlna.dmsSharesLocalLibrary ->
+                                    "本地曲库 ${dlna.dmsAlbums} 张 / ${dlna.dmsTracks} 首"
+                                dlna.dmsRunning -> "共享中（未读取到本地曲库）"
+                                else -> "未启动（选择“发送者”会自动启动）"
                             },
-                            color = AppMuted,
+                            color = if (dlna.dmsRunning) AppText else AppMuted,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(top = 4.dp),
                         )
@@ -1826,6 +2219,20 @@ private fun CastScreen(dlna: DlnaController, onMenu: () -> Unit) {
                     ) {
                         Text(if (dlna.dmsRunning) "停止" else "启动", fontSize = 11.sp)
                     }
+                }
+                Text(
+                    "本地曲库自动共享；本地与 NAS 曲目都可直接投送。",
+                    color = AppMuted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                if (dlna.dmsRunning && dlna.dmsStatus.isNotBlank()) {
+                    Text(
+                        "地址：" + dlna.dmsStatus,
+                        color = AppDim,
+                        fontSize = 9.sp,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
                 if (!canToggleDms) {
                     Text(
