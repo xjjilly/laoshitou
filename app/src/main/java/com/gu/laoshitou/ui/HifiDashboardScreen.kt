@@ -28,10 +28,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -53,7 +56,23 @@ import kotlin.math.abs
 import kotlin.math.log10
 
 @Composable
-fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
+fun HifiDashboardScreen(
+    state: PlayerState,
+    actions: PlayerActions,
+    initialEqEditorOpen: Boolean = false,
+) {
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    // Entering from the sidebar "EQ / DSP" should land on the 16-band editor.
+    LaunchedEffect(initialEqEditorOpen) {
+        if (initialEqEditorOpen) {
+            delay(150)
+            scrollState.animateScrollTo(
+                with(density) { EqEditorEntryScrollOffset.roundToPx() }
+            )
+        }
+    }
+
     MaterialTheme(colorScheme = HifiColors, typography = HifiTypography) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -62,7 +81,7 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -145,7 +164,8 @@ fun HifiDashboardScreen(state: PlayerState, actions: PlayerActions) {
                 }
                 PerformanceWarning(state)
 
-                var eqEditorOpen by remember { mutableStateOf(false) }
+                // Sidebar "EQ / DSP" enters this page with the editor expanded.
+                var eqEditorOpen by remember { mutableStateOf(initialEqEditorOpen) }
                 TextButton(onClick = { eqEditorOpen = !eqEditorOpen }) {
                     Text(if (eqEditorOpen) "收起 16 段 EQ / 频响曲线" else "16 段 EQ / 频响曲线")
                 }
@@ -324,7 +344,9 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
             style = MaterialTheme.typography.bodySmall,
             color = HifiMuted,
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
+        PresetSection(state, actions)
+        Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = actions.loadCurrentEqIntoEditor,
             enabled = state.eqPath.isNotEmpty(),
@@ -610,6 +632,9 @@ private fun EqEditorCard(state: PlayerState, actions: PlayerActions) {
 }
 
 private const val kEqEditorCurveSamples = 200
+
+// Scroll target used when the sidebar "EQ / DSP" route opens the 16-band card.
+private val EqEditorEntryScrollOffset = 500.dp
 
 private fun nearestBandIndex(x: Float, left: Float, right: Float): Int {
     var best = 0

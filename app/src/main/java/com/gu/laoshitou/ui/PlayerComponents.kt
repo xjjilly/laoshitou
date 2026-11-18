@@ -296,8 +296,8 @@ fun PerformanceWarning(state: PlayerState, modifier: Modifier = Modifier) {
 }
 
 /**
- * Built-in scenario presets plus the user's saved presets, shared by the HiFi
- * advanced settings.
+ * Built-in scenario presets plus the user's saved presets, shown inside the
+ * 16-band EQ card so presets and the visual editor stay together.
  */
 @Composable
 fun PresetSection(state: PlayerState, actions: PlayerActions) {
@@ -314,10 +314,9 @@ fun PresetSection(state: PlayerState, actions: PlayerActions) {
     ) {
         SoundPreset.entries.forEach { preset ->
             FilterChip(
-                selected = false,
+                selected = state.currentPreset == preset,
                 onClick = { actions.applyPreset(preset) },
                 label = { Text(preset.label) },
-                enabled = !state.playing,
             )
         }
     }
@@ -342,10 +341,9 @@ fun PresetSection(state: PlayerState, actions: PlayerActions) {
         ) {
             state.userPresets.forEach { preset ->
                 FilterChip(
-                    selected = false,
+                    selected = state.currentPreset == null && state.eqName == preset.name,
                     onClick = { actions.applyUserPreset(preset) },
                     label = { Text(preset.name) },
-                    enabled = !state.playing,
                 )
             }
         }
@@ -356,13 +354,12 @@ fun PresetSection(state: PlayerState, actions: PlayerActions) {
                 presetName = ""
                 presetDialogOpen = true
             },
-            enabled = !state.playing,
         ) {
             Text("存为预设")
         }
         TextButton(
             onClick = { deleteDialogOpen = true },
-            enabled = !state.playing && state.userPresets.isNotEmpty(),
+            enabled = state.userPresets.isNotEmpty(),
         ) {
             Text("删除预设")
         }
@@ -440,8 +437,6 @@ fun AdvancedSettingsContent(
         Spacer(Modifier.height(8.dp))
         Text(state.summary, style = MaterialTheme.typography.bodySmall)
 
-        Spacer(Modifier.height(12.dp))
-        PresetSection(state, actions)
         Spacer(Modifier.height(12.dp))
         SettingsSwitch(
             label = "处理模式（同族升频）",

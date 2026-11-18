@@ -93,3 +93,36 @@ val SoundPresetCatalog: Map<SoundPreset, PresetSpec> = mapOf(
         multibandThresholdDb = -12.0,
     ),
 )
+
+/**
+ * Approximate 16-band curves for the four device presets. The native engine
+ * still uses their dedicated profile files; these gains keep the visual
+ * 16-band editor in sync and give immediate feedback when one is tapped.
+ */
+data class DevicePresetEq(
+    val gains: List<Float>,
+    val preampDb: Double = 0.0,
+)
+
+val DevicePresetCatalog: Map<SoundPreset, DevicePresetEq> = mapOf(
+    SoundPreset.Studio to DevicePresetEq(
+        gains = List(EqEditorFrequencies.size) { 0f },
+    ),
+    SoundPreset.Live to DevicePresetEq(
+        gains = List(EqEditorFrequencies.size) { 0f },
+    ),
+    SoundPreset.NightIem to DevicePresetEq(
+        gains = listOf(
+            -3f, -2f, -1f, 0f, 0f, 0f, 0f, 0f,
+            0f, 0f, -1f, -1.5f, -1f, 0f, 0f, 0f,
+        ),
+        preampDb = -2.0,
+    ),
+    SoundPreset.Nearfield to DevicePresetEq(
+        gains = listOf(
+            1.5f, 1.5f, 1f, 0.5f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f, -0.5f, -1f, -1f,
+        ),
+        preampDb = -2.0,
+    ),
+)

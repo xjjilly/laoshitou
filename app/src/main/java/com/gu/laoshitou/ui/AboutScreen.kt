@@ -276,6 +276,7 @@ private fun Bullet(text: String) {
 private fun PcEcosystemCard() {
     val context = LocalContext.current
     var showDownloads by remember { mutableStateOf(false) }
+    var showGallery by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(18.dp)
     val goldLine = Brush.linearGradient(
         colors = listOf(
@@ -398,19 +399,39 @@ private fun PcEcosystemCard() {
                         letterSpacing = 0.5.sp,
                     )
                 }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = "WIN 10/11 · X64",
-                    color = HifiMuted.copy(alpha = 0.5f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 9.sp,
-                )
+                Spacer(Modifier.size(10.dp))
+                OutlinedButton(
+                    onClick = { showGallery = true },
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, HifiAmber.copy(alpha = 0.7f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = HifiAmber,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "来，看大图",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        letterSpacing = 0.5.sp,
+                    )
+                }
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "WIN 10/11 · X64",
+                color = HifiMuted.copy(alpha = 0.5f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+            )
         }
     }
 
     if (showDownloads) {
         PcDownloadDialog(onDismiss = { showDownloads = false })
+    }
+    if (showGallery) {
+        PcUiGalleryDialog(onDismiss = { showGallery = false })
     }
 }
 

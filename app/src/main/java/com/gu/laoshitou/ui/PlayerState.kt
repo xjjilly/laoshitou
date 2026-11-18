@@ -107,6 +107,8 @@ class PlayerState(
     var multibandHighHz by mutableStateOf(2000.0)
     var multibandThresholdDb by mutableStateOf(-12.0)
     var userPresets by mutableStateOf<List<UserPreset>>(emptyList())
+    /** Built-in preset currently applied, used for chip selection feedback. */
+    var currentPreset by mutableStateOf<SoundPreset?>(null)
     var eqCascade by mutableStateOf(false)
     var eqSlopeEnabled by mutableStateOf(false)
     var eqSlope by mutableStateOf(1.0)

@@ -187,6 +187,9 @@ fun AppShell(
 ) {
     var page by remember { mutableStateOf(0) }
     var showAdvancedAudio by remember { mutableStateOf(false) }
+    // Sidebar "EQ / DSP" opens the same HiFi page but auto-expands the 16-band editor.
+    var openEqEditorOnEntry by remember { mutableStateOf(false) }
+    var showPcGallery by remember { mutableStateOf(false) }
     // Debug-only: jump to a page directly so UI can be captured without adb
     // input injection (MIUI blocks it on the test device).
     val debugContext = androidx.compose.ui.platform.LocalContext.current
@@ -201,6 +204,21 @@ fun AppShell(
             }
             if (activity?.intent?.getBooleanExtra("open_advanced_audio", false) == true) {
                 showAdvancedAudio = true
+            }
+            if (activity?.intent?.getBooleanExtra("open_eq_dsp", false) == true) {
+                openEqEditorOnEntry = true
+                showAdvancedAudio = true
+            }
+            activity?.intent?.getStringExtra("apply_preset")?.let { presetName ->
+                SoundPreset.entries.firstOrNull { it.name == presetName }?.let {
+                    actions.applyPreset(it)
+                }
+            }
+            if (activity?.intent?.getBooleanExtra("open_pc_gallery", false) == true) {
+                showPcGallery = true
+            }
+            if (activity?.intent?.getBooleanExtra("open_about", false) == true) {
+                actions.setAboutOpen(true)
             }
         }
     }
@@ -222,7 +240,11 @@ fun AppShell(
             AdvancedAudioPage(
                 state = state,
                 actions = actions,
-                onBack = { showAdvancedAudio = false },
+                openEqEditor = openEqEditorOnEntry,
+                onBack = {
+                    showAdvancedAudio = false
+                    openEqEditorOnEntry = false
+                },
             )
         } else {
             ModalNavigationDrawer(
@@ -233,7 +255,14 @@ fun AppShell(
                             state = state,
                             actions = actions,
                             versionName = versionName,
-                            onOpenAdvancedAudio = { showAdvancedAudio = true },
+                            onOpenAdvancedAudio = {
+                                openEqEditorOnEntry = false
+                                showAdvancedAudio = true
+                            },
+                            onOpenEqDsp = {
+                                openEqEditorOnEntry = true
+                                showAdvancedAudio = true
+                            },
                             onClose = { scope.launch { drawerState.close() } },
                         )
                     }
@@ -290,6 +319,9 @@ fun AppShell(
                 }
             }
         }
+        if (showPcGallery) {
+            PcUiGalleryDialog(onDismiss = { showPcGallery = false })
+        }
     }
 }
 
@@ -297,6 +329,7 @@ fun AppShell(
 private fun AdvancedAudioPage(
     state: PlayerState,
     actions: PlayerActions,
+    openEqEditor: Boolean,
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(HifiColors.background)) {
@@ -309,7 +342,11 @@ private fun AdvancedAudioPage(
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            HifiDashboardScreen(state, actions)
+            HifiDashboardScreen(
+                state = state,
+                actions = actions,
+                initialEqEditorOpen = openEqEditor,
+            )
         }
     }
 }
@@ -2322,6 +2359,7 @@ private fun AppDrawer(
     actions: PlayerActions,
     versionName: String,
     onOpenAdvancedAudio: () -> Unit,
+    onOpenEqDsp: () -> Unit,
     onClose: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(vertical = 20.dp)) {
@@ -2346,7 +2384,13 @@ private fun AppDrawer(
             enabled = false,
             onClick = onClose,
         )
-        DrawerItem(label = "EQ / DSP", enabled = false, onClick = onClose)
+        DrawerItem(
+            label = "EQ / DSP",
+            onClick = {
+                onClose()
+                onOpenEqDsp()
+            },
+        )
         DrawerItem(label = "高级音频设置") {
             onClose()
             onOpenAdvancedAudio()

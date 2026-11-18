@@ -58,6 +58,7 @@ import com.gu.laoshitou.ui.EqEditorQ
 import com.gu.laoshitou.ui.PlayMode
 import com.gu.laoshitou.ui.PlayerActions
 import com.gu.laoshitou.ui.PlayerState
+import com.gu.laoshitou.ui.DevicePresetCatalog
 import com.gu.laoshitou.ui.SoundPreset
 import com.gu.laoshitou.ui.SoundPresetCatalog
 import com.gu.laoshitou.ui.TrackItem
@@ -304,6 +305,7 @@ private fun AppRoot() {
             }
             state.eqPath = path
             state.eqName = preset.name
+            state.currentPreset = null
             state.crossfeed = preset.crossfeed
             state.crossfeedWidth = preset.crossfeedWidth
             state.stereoWidth = preset.stereoWidth
@@ -377,6 +379,7 @@ private fun AppRoot() {
             }
             state.eqPath = path
             state.eqName = "可视化 16 段"
+            state.currentPreset = null
             settings.edit()
                 .putString("eq_editor_gains", state.eqEditorGains.joinToString(","))
                 .putFloat("eq_editor_preamp", state.eqEditorPreamp.toFloat())
@@ -421,6 +424,7 @@ private fun AppRoot() {
     ) {
         state.eqPath = eqPath
         state.eqName = eqName
+        state.currentPreset = preset
         state.crossfeed = crossfeed
         state.crossfeedWidth = crossfeedWidth
         state.stereoWidth = stereoWidth
@@ -443,13 +447,24 @@ private fun AppRoot() {
 
     fun applyPreset(preset: SoundPreset) {
         when (preset) {
-            SoundPreset.Studio -> applyPresetState(
-                preset, "", "", false, 0.0, 1.0, false,
-            )
-            SoundPreset.Live -> applyPresetState(
-                preset, "", "", true, 0.85, 1.25, false,
-            )
+            SoundPreset.Studio -> {
+                val eq = DevicePresetCatalog[preset]
+                applyPresetState(
+                    preset, "", "", false, 0.0, 1.0, false,
+                    gains = eq?.gains,
+                    preamp = eq?.preampDb ?: 0.0,
+                )
+            }
+            SoundPreset.Live -> {
+                val eq = DevicePresetCatalog[preset]
+                applyPresetState(
+                    preset, "", "", true, 0.85, 1.25, false,
+                    gains = eq?.gains,
+                    preamp = eq?.preampDb ?: 0.0,
+                )
+            }
             SoundPreset.NightIem -> {
+                val eq = DevicePresetCatalog[preset]
                 val text = """
                     Preamp: -2.0 dB
                     Filter 1: ON HPF Fc 20 Hz Q 0.707
@@ -461,10 +476,13 @@ private fun AppRoot() {
                     }
                     applyPresetState(
                         preset, path, "深夜动铁（内置）", true, 0.30, 1.0, true,
+                        gains = eq?.gains,
+                        preamp = eq?.preampDb ?: 0.0,
                     )
                 }
             }
             SoundPreset.Nearfield -> {
+                val eq = DevicePresetCatalog[preset]
                 val text = """
                     Preamp: -2.0 dB
                     Filter 1: ON LSC Fc 80 Hz Gain 2.0 dB Q 0.7
@@ -476,6 +494,8 @@ private fun AppRoot() {
                     }
                     applyPresetState(
                         preset, path, "近场书架（内置）", true, 0.50, 1.10, false,
+                        gains = eq?.gains,
+                        preamp = eq?.preampDb ?: 0.0,
                     )
                 }
             }
